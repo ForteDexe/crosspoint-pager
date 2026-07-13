@@ -9,10 +9,13 @@ Use this guide to send test messages from a PC to the Xteink Pager screen.
 
 ## Before starting
 
-1. Flash the Pager firmware to the Xteink.
-2. On the device, open **Settings → System → Bluetooth Pairing** to confirm it
+1. Build the firmware, then open
+   [CrossPoint Flash Tools](https://crosspointreader.com/#flash-tools).
+2. In the flash tool, select and flash the built
+   `.pio\build\default\firmware.bin` file from this repository.
+3. On the device, open **Settings → System → Bluetooth Pairing** to confirm it
    advertises as `CrossPoint Pager`.
-3. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
+4. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
    Pager**, then put the device into sleep/Pager standby.
 
 ## Start the local web server
