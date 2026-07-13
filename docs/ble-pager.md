@@ -5,16 +5,17 @@ experiment, not an upstream CrossPoint feature.
 
 ## What it does
 
-- **Settings → System → Bluetooth Pairing** starts a small custom GATT
-  peripheral named `CrossPoint Pager`.
 - **Settings → Display → Sleep Screen → Pager** makes the sleep screen
-  receive pager updates from that GATT peripheral.
+  advertise a small custom GATT peripheral named `CrossPoint Pager` and
+  receive pager updates from it.
 - The writable characteristic accepts UTF-8 `title\nmessage\nfooter` data,
   capped at 320 bytes.
 - The display is refreshed only when the received payload differs from the
   previous one. Changed pager messages use a fast e-ink refresh; the cleanup
   refresh follows **Settings > Display > Refresh Frequency**, matching reader
   page turns.
+- At 25% battery or lower, Pager stops BLE, shows a low-battery sleep message,
+  and enters deep sleep using the Quick Resume presentation.
 
 The protocol identifiers are:
 
@@ -30,15 +31,22 @@ Pager from a PC browser](pager-web-bluetooth.md).
 
 ## Connection and power model
 
-BLE is completely off outside the pairing page and Pager sleep mode. It
-is BLE-only: starting it turns Wi-Fi off rather than attempting unmeasured
-Wi-Fi/BLE coexistence.
+BLE is completely off outside Pager sleep mode. It is BLE-only: starting it
+turns Wi-Fi off rather than attempting unmeasured Wi-Fi/BLE coexistence.
 
 Pager is powered-on standby, not ESP32 deep sleep. Deep sleep powers the
 radio off, so a truly periodic wake-and-receive design needs a later hardware
 current-draw and reconnect study. While the pager service is running, the
 firmware keeps the ESP32-C3 at normal CPU frequency; the BLE controller is not
 reliable at the 10 MHz idle frequency.
+
+The battery-first implementation roadmap is tracked in [BLE Pager power
+plan](ble-pager-power-plan.md).
+
+An experimental modem-sleep/automatic-light-sleep firmware is available as the
+`pager_power` build environment. It is a hardware-validation build, not the
+default firmware; see phase 2 of the power plan for its build command and test
+requirements.
 
 The service is not bonded or authenticated yet. Treat it as a nearby,
 development-only receiver and do not send sensitive notifications.

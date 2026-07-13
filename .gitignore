@@ -1,4 +1,8 @@
 .pio
+/.dummy
+/managed_components
+/sdkconfig.defaults
+/sdkconfig.pager_power
 .idea
 .DS_Store
 .vscode

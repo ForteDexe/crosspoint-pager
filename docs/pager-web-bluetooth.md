@@ -21,25 +21,35 @@ conda run --prefix .conda python -m pip install platformio==6.1.19
 `bleak` is not required: the Pager test page uses the browser's Web Bluetooth
 API and Python's built-in HTTP server.
 
-Build the Xteink firmware with:
+Build the validated low-power Pager firmware with:
 
 ```powershell
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
-.\.conda\Scripts\pio.exe run -e default
+.\.conda\Scripts\pio.exe run -e pager_power
 ```
 
 The first build downloads the ESP32 platform and toolchain. On success, the
-flashable file is `.pio\build\default\firmware.bin`.
+flashable file is `.pio\build\pager_power\firmware.bin`. The experimental
+`pager_power` environment enables BLE modem sleep and automatic light sleep;
+use `-e default` only when you specifically want the normal reader build.
+
+## Flash the firmware
+
+With the Xteink connected by USB and no serial monitor open, flash the same
+environment directly from PowerShell:
+
+```powershell
+.\.conda\Scripts\pio.exe run -e pager_power -t upload
+```
+
+Alternatively, open [CrossPoint Flash Tools](https://crosspointreader.com/#flash-tools)
+and select `.pio\build\pager_power\firmware.bin`.
 
 ## Before starting
 
-1. Open [CrossPoint Flash Tools](https://crosspointreader.com/#flash-tools).
-2. In the flash tool, select and flash the built
-   `.pio\build\default\firmware.bin` file from this repository.
-3. On the device, open **Settings → System → Bluetooth Pairing** to confirm it
-   advertises as `CrossPoint Pager`.
-4. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
+1. Flash the firmware with one of the methods above.
+2. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
    Pager**, then put the device into sleep/Pager standby.
 
 ## Start the local web server
@@ -73,7 +83,7 @@ Display > Refresh Frequency**.
 
 ## If the browser cannot find Pager
 
-- Reopen **Bluetooth Pairing** on the Xteink and keep it on that screen.
+- Wake the Xteink, then enter Pager standby again with **Sleep Screen → Pager** selected.
 - Make sure Wi-Fi is not active on the device; Pager uses BLE only.
 - Use Edge or Chrome and `http://localhost:8080`; unsupported browsers will not
   expose the Web Bluetooth chooser.

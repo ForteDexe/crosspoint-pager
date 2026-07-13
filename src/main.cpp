@@ -42,6 +42,9 @@ FontDecompressor fontDecompressor;
 SdCardFontSystem sdFontSystem;
 FontCacheManager fontCacheManager(renderer.getFontMap(), renderer.getSdCardFonts());
 static unsigned long allowSleepAt = 0;
+// enterDeepSleep() deliberately returns for Pager, so consume the current
+// long-press gesture to avoid restarting its BLE activity until release.
+static bool powerSleepGestureConsumed = false;
 
 // Fonts
 EpdFont notoserif14RegularFont(&notoserif_14_regular);
@@ -235,16 +238,17 @@ static bool loadSleepFrameBuffer() {
 }
 
 // Enter deep sleep mode
-void enterDeepSleep(bool fromTimeout = false) {
+void enterDeepSleep(bool fromTimeout = false, bool pagerLowBatterySleep = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
   // BLE needs the MCU and radio running. Pager is therefore an explicit
   // powered-on standby mode, not ESP32 deep sleep. It remains opt-in and is
   // responsible for rendering only when a changed GATT payload is received.
-  const bool isPagerSleep = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::PAGER;
+  const bool isPagerSleep =
+      SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::PAGER && !pagerLowBatterySleep;
 
-  const bool isQuickResumeSleep =
+  const bool isQuickResumeSleep = pagerLowBatterySleep ||
       SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
       (fromTimeout &&
        SETTINGS.quickResumeSleepScreen == CrossPointSettings::QUICK_RESUME_SLEEP_SCREEN::QUICK_RESUME_AFTER_TIMEOUT);
@@ -263,7 +267,7 @@ void enterDeepSleep(bool fromTimeout = false) {
   // Commit to sleeping before goToSleep() runs the outgoing activity's onExit():
   // a WiFi activity would otherwise silentRestart() here and reboot instead.
   deepSleepInProgress = !isPagerSleep;
-  activityManager.goToSleep(fromTimeout);
+  activityManager.goToSleep(fromTimeout, pagerLowBatterySleep);
 
   if (isPagerSleep) {
     LOG_INF("MAIN", "Pager standby active; deep sleep skipped for BLE");
@@ -545,6 +549,10 @@ void loop() {
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }
 
+  if (!gpio.isPressed(HalGPIO::BTN_POWER)) {
+    powerSleepGestureConsumed = false;
+  }
+
   static bool screenshotButtonsReleased = true;
   static bool screenshotComboActive = false;
   if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.isPressed(HalGPIO::BTN_DOWN)) {
@@ -577,12 +585,13 @@ void loop() {
     return;
   }
 
-  if (millis() >= allowSleepAt && gpio.isPressed(HalGPIO::BTN_POWER) &&
+  if (!powerSleepGestureConsumed && millis() >= allowSleepAt && gpio.isPressed(HalGPIO::BTN_POWER) &&
       gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
     // If the screenshot combination is potentially being pressed, don't sleep
     if (gpio.isPressed(HalGPIO::BTN_DOWN)) {
       return;
     }
+    powerSleepGestureConsumed = true;
     enterDeepSleep();
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
     return;
@@ -605,6 +614,11 @@ void loop() {
   const unsigned long activityStartTime = millis();
   activityManager.loop();
   const unsigned long activityDuration = millis() - activityStartTime;
+
+  if (activityManager.shouldEnterDeepSleep()) {
+    enterDeepSleep(false, true);
+    return;
+  }
 
   const unsigned long loopDuration = millis() - loopStartTime;
   if (loopDuration > maxLoopDuration) {

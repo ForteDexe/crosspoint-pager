@@ -86,7 +86,7 @@ class ActivityManager {
   void goToRecentBooks();
   void goToBrowser();
   void goToReader(std::string path);
-  void goToSleep(bool fromTimeout = false);
+  void goToSleep(bool fromTimeout = false, bool pagerLowBatterySleep = false);
   void goToBoot();
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goToCrashReport();
@@ -100,6 +100,7 @@ class ActivityManager {
   void popActivity();
 
   bool preventAutoSleep() const;
+  bool shouldEnterDeepSleep() const;
   bool isReaderActivity() const;
   bool skipLoopDelay() const;
   ScreenshotInfo getScreenshotInfo() const;

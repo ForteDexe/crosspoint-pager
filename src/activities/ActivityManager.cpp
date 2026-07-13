@@ -197,8 +197,8 @@ void ActivityManager::goToReader(std::string path) {
   replaceActivity(std::make_unique<ReaderActivity>(renderer, mappedInput, std::move(path)));
 }
 
-void ActivityManager::goToSleep(bool fromTimeout) {
-  replaceActivity(std::make_unique<SleepActivity>(renderer, mappedInput, fromTimeout));
+void ActivityManager::goToSleep(bool fromTimeout, bool pagerLowBatterySleep) {
+  replaceActivity(std::make_unique<SleepActivity>(renderer, mappedInput, fromTimeout, pagerLowBatterySleep));
   loop();  // Important: sleep screen must be rendered immediately, the caller will go to sleep right after this returns
 }
 
@@ -247,6 +247,10 @@ void ActivityManager::popActivity() {
 }
 
 bool ActivityManager::preventAutoSleep() const { return currentActivity && currentActivity->preventAutoSleep(); }
+
+bool ActivityManager::shouldEnterDeepSleep() const {
+  return currentActivity && currentActivity->shouldEnterDeepSleep();
+}
 
 bool ActivityManager::isReaderActivity() const {
   return std::any_of(stackActivities.begin(), stackActivities.end(),

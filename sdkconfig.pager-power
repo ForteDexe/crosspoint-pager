@@ -1,0 +1,26 @@
+# Experimental ESP32-C3 Pager power configuration. This follows Espressif's
+# NimBLE power-save example, using the main 40 MHz crystal because the X3 has
+# no verified external 32 kHz crystal connection to the ESP32-C3.
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_IDLE_TIME_BEFORE_SLEEP=3
+CONFIG_BT_CTRL_MODEM_SLEEP=y
+CONFIG_BT_CTRL_MODEM_SLEEP_MODE_1=y
+CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL=y
+# PioArduino appends custom sdkconfig defaults after these derived controller
+# values have already been emitted. Set them explicitly so the controller uses
+# Mode 1 and the 40 MHz main crystal instead of its base-config no-sleep mode.
+CONFIG_BT_CTRL_SLEEP_MODE_EFF=1
+CONFIG_BT_CTRL_SLEEP_CLOCK_EFF=1
+CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y
+# Do not power-cycle Bluetooth MAC/baseband between Pager advertising events.
+# This is the most aggressive radio-saving option; leave it off while
+# validating reliable automatic light sleep on Xteink X3.
+# CONFIG_ESP_PHY_MAC_BB_PD is not set
+
+# ESP-IDF 5.5.4's Arduino defaults enable the Modbus master component with a
+# 10-second response timeout but leave its API blocking limit at 5 seconds.
+# CrossPoint does not use Modbus; this merely satisfies that framework's
+# compile-time configuration assertion while it builds the shared libraries.
+CONFIG_FMB_MASTER_MAX_API_BLOCKING_TIME_MS=10000

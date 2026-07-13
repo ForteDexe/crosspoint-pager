@@ -2,6 +2,8 @@
 
 #include <Logging.h>
 #include <WiFi.h>
+#include <driver/gpio.h>
+#include <esp_pm.h>
 #include <esp_sleep.h>
 
 #include <cassert>
@@ -9,6 +11,40 @@
 #include "HalGPIO.h"
 
 HalPowerManager powerManager;  // Singleton instance
+
+namespace {
+
+constexpr int PAGER_LIGHT_SLEEP_MIN_FREQ_MHZ = 40;
+// X3's battery latch MOSFET is controlled by GPIO13. The ESP-IDF C3 light
+// sleep workaround otherwise disconnects every GPIO during automatic sleep,
+// which removes this hold signal and physically powers the device off.
+constexpr gpio_num_t X3_BATTERY_LATCH_GPIO = GPIO_NUM_13;
+bool pagerLightSleepEnabled = false;
+
+bool readFuelGaugeWord(uint8_t registerAddress, uint16_t* outValue) {
+  if (outValue == nullptr) {
+    return false;
+  }
+
+  Wire.beginTransmission(I2C_ADDR_BQ27220);
+  Wire.write(registerAddress);
+  if (Wire.endTransmission(false) != 0) {
+    return false;
+  }
+  if (Wire.requestFrom(I2C_ADDR_BQ27220, static_cast<uint8_t>(2)) < 2) {
+    while (Wire.available()) {
+      Wire.read();
+    }
+    return false;
+  }
+
+  const uint8_t lo = Wire.read();
+  const uint8_t hi = Wire.read();
+  *outValue = static_cast<uint16_t>(hi) << 8 | lo;
+  return true;
+}
+
+}  // namespace
 
 void HalPowerManager::begin() {
   if (gpio.deviceIsX3()) {
@@ -101,22 +137,12 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
       return _batteryCachedPercent;
     }
 
-    // Read SOC directly from I2C fuel gauge (16-bit LE register).
     // On I2C error, keep last known value to avoid UI jitter/slowdowns.
-    Wire.beginTransmission(I2C_ADDR_BQ27220);
-    Wire.write(BQ27220_SOC_REG);
-    if (Wire.endTransmission(false) != 0) {
+    uint16_t soc = 0;
+    if (!readFuelGaugeWord(BQ27220_SOC_REG, &soc)) {
       _batteryLastPollMs = now;
       return _batteryCachedPercent;
     }
-    Wire.requestFrom(I2C_ADDR_BQ27220, (uint8_t)2);
-    if (Wire.available() < 2) {
-      _batteryLastPollMs = now;
-      return _batteryCachedPercent;
-    }
-    const uint8_t lo = Wire.read();
-    const uint8_t hi = Wire.read();
-    const uint16_t soc = (hi << 8) | lo;
     _batteryCachedPercent = soc > 100 ? 100 : soc;
     _batteryLastPollMs = now;
     return _batteryCachedPercent;
@@ -130,6 +156,88 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
     _batteryCachedPercent = (_batteryCachedPercent * 9 + battery.readPercentage() * 10) / 10;
   }
   return _batteryCachedPercent / 10;
+}
+
+bool HalPowerManager::enablePagerLightSleep() {
+#if CONFIG_PM_ENABLE
+  if (pagerLightSleepEnabled) {
+    return true;
+  }
+  if (normalFreq <= 0) {
+    LOG_ERR("PWR", "Cannot configure Pager light sleep before power manager initialization");
+    return false;
+  }
+
+  // Keep the board powered while the CPU automatically enters light sleep.
+  // CONFIG_PM_SLP_DISABLE_GPIO is selected on ESP32-C3 by the IDF GPIO-reset
+  // workaround; opt this latch pin out of that all-GPIO sleep isolation.
+  // The normal deep-sleep path explicitly drives this same pin low later.
+  esp_err_t latchResult = gpio_set_direction(X3_BATTERY_LATCH_GPIO, GPIO_MODE_OUTPUT);
+  if (latchResult == ESP_OK) {
+    latchResult = gpio_set_level(X3_BATTERY_LATCH_GPIO, 1);
+  }
+  if (latchResult == ESP_OK) {
+    latchResult = gpio_sleep_sel_dis(X3_BATTERY_LATCH_GPIO);
+  }
+  if (latchResult != ESP_OK) {
+    LOG_ERR("PWR", "Could not preserve X3 battery latch for Pager light sleep: %s", esp_err_to_name(latchResult));
+    return false;
+  }
+
+  // The Bluetooth controller has its own modem-sleep timer, but ESP32-C3
+  // automatic light sleep needs this wake source explicitly armed so that the
+  // CPU resumes in time for advertising and connection events.
+  const esp_err_t btWakeResult = esp_sleep_enable_bt_wakeup();
+  if (btWakeResult != ESP_OK) {
+    LOG_ERR("PWR", "Could not enable Pager Bluetooth wakeup: %s", esp_err_to_name(btWakeResult));
+    return false;
+  }
+
+  const esp_pm_config_t config = {
+      .max_freq_mhz = normalFreq,
+      .min_freq_mhz = normalFreq < PAGER_LIGHT_SLEEP_MIN_FREQ_MHZ ? normalFreq : PAGER_LIGHT_SLEEP_MIN_FREQ_MHZ,
+      .light_sleep_enable = true,
+  };
+  const esp_err_t result = esp_pm_configure(&config);
+  if (result != ESP_OK) {
+    esp_sleep_disable_bt_wakeup();
+    LOG_ERR("PWR", "Pager automatic light sleep configuration failed: %s", esp_err_to_name(result));
+    return false;
+  }
+
+  pagerLightSleepEnabled = true;
+  LOG_INF("PWR", "Pager automatic light sleep enabled");
+  return true;
+#else
+  LOG_DBG("PWR", "Pager automatic light sleep unavailable in this build");
+  return false;
+#endif
+}
+
+void HalPowerManager::disablePagerLightSleep() {
+#if CONFIG_PM_ENABLE
+  if (!pagerLightSleepEnabled) {
+    return;
+  }
+
+  const esp_pm_config_t config = {
+      .max_freq_mhz = normalFreq,
+      .min_freq_mhz = normalFreq,
+      .light_sleep_enable = false,
+  };
+  const esp_err_t result = esp_pm_configure(&config);
+  if (result != ESP_OK) {
+    LOG_ERR("PWR", "Could not disable Pager automatic light sleep: %s", esp_err_to_name(result));
+  }
+
+  const esp_err_t btWakeResult = esp_sleep_disable_bt_wakeup();
+  if (btWakeResult != ESP_OK) {
+    LOG_ERR("PWR", "Could not disable Pager Bluetooth wakeup: %s", esp_err_to_name(btWakeResult));
+  }
+
+  pagerLightSleepEnabled = false;
+  LOG_INF("PWR", "Pager automatic light sleep disabled");
+#endif
 }
 
 HalPowerManager::Lock::Lock() {

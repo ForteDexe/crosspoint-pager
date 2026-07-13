@@ -4,6 +4,7 @@
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalBlePager.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Txt.h>
@@ -20,15 +21,31 @@
 void SleepActivity::onEnter() {
   Activity::onEnter();
 
+  if (pagerLowBatterySleep) {
+    renderPagerLowBatterySleepScreen();
+    return;
+  }
+
   pagerMode = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::PAGER;
   if (pagerMode) {
     pagerUpdatesUntilCleanRefresh = SETTINGS.getRefreshFrequency();
+    checkPagerBatteryLevel();
+    if (pagerLowBatteryDetected) {
+      return;
+    }
     char payload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
     const size_t payloadLength = blePager.takePayload(payload, sizeof(payload));
     if (payloadLength > 0) {
       updatePagerText(payload, payloadLength);
     }
-    blePager.begin();
+    // The controller must be initialized before automatic light sleep is
+    // enabled. Its BLE wake source then keeps advertising and GATT events
+    // alive while Pager otherwise sleeps.
+    if (blePager.begin()) {
+      powerManager.enablePagerLightSleep();
+    } else {
+      LOG_ERR("PAGER", "Bluetooth unavailable; Pager will stay awake");
+    }
     renderPagerSleepScreen(pagerRefreshMode);
     return;
   }
@@ -72,12 +89,18 @@ void SleepActivity::onEnter() {
 void SleepActivity::onExit() {
   if (pagerMode) {
     blePager.end();
+    powerManager.disablePagerLightSleep();
   }
   Activity::onExit();
 }
 
 void SleepActivity::loop() {
   if (!pagerMode) {
+    return;
+  }
+
+  checkPagerBatteryLevel();
+  if (pagerLowBatteryDetected) {
     return;
   }
 
@@ -102,6 +125,24 @@ void SleepActivity::render(RenderLock&&) {
 }
 
 bool SleepActivity::preventAutoSleep() { return pagerMode; }
+
+bool SleepActivity::shouldEnterDeepSleep() { return pagerLowBatteryDetected; }
+
+void SleepActivity::checkPagerBatteryLevel() {
+  const unsigned long now = millis();
+  if (lastPagerBatteryCheckMs != 0 && now - lastPagerBatteryCheckMs < HalPowerManager::BATTERY_POLL_MS) {
+    return;
+  }
+  lastPagerBatteryCheckMs = now;
+
+  const uint16_t batteryPercent = powerManager.getBatteryPercentage();
+  if (batteryPercent > PAGER_LOW_BATTERY_PERCENT) {
+    return;
+  }
+
+  pagerLowBatteryDetected = true;
+  LOG_INF("PAGER", "Battery at %u%%; entering deep sleep", batteryPercent);
+}
 
 HalDisplay::RefreshMode SleepActivity::nextPagerRefreshMode() {
   if (pagerUpdatesUntilCleanRefresh <= 1) {
@@ -436,6 +477,11 @@ void SleepActivity::renderLastScreenSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
   renderer.drawImage(MoonIcon, 0, pageHeight - MOONICON_HEIGHT, MOONICON_WIDTH, MOONICON_HEIGHT);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+}
+
+void SleepActivity::renderPagerLowBatterySleepScreen() const {
+  GUI.drawPopup(renderer, tr(STR_PAGER_LOW_BATTERY));
+  renderLastScreenSleepScreen();
 }
 
 void SleepActivity::renderBlankSleepScreen() const {

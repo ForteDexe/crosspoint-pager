@@ -44,6 +44,12 @@ class HalPowerManager {
   // Get battery percentage (range 0-100)
   uint16_t getBatteryPercentage() const;
 
+  // Enable the ESP-IDF automatic light-sleep configuration used by the
+  // experimental Pager power build. Returns false when that SDK support was
+  // not compiled into the current firmware.
+  bool enablePagerLightSleep();
+  void disablePagerLightSleep();
+
   // RAII helper class to manage power saving locks
   // Usage: create an instance of Lock in a scope to disable power saving, for example when running a task that needs
   // full performance. When the Lock instance is destroyed (goes out of scope), power saving will be re-enabled.
