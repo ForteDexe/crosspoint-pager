@@ -1,0 +1,4 @@
+interface:
+  display_name: "HAL and Abstractions"
+  short_description: "Preserve firmware abstraction boundaries"
+  default_prompt: "Use $hal-and-abstractions to review this firmware change."

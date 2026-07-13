@@ -1,0 +1,4 @@
+interface:
+  display_name: "Control-Flow Clarity"
+  short_description: "Make C++ branching and state explicit"
+  default_prompt: "Use $control-flow-clarity to review this C++ state logic."

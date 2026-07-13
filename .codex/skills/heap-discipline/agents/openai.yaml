@@ -1,0 +1,4 @@
+interface:
+  display_name: "Heap Discipline"
+  short_description: "Keep ESP32-C3 memory use robust"
+  default_prompt: "Use $heap-discipline to review these allocations."

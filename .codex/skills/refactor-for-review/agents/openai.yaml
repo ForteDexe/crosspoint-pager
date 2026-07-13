@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refactor for Review"
+  short_description: "Keep firmware changes narrow and reviewable"
+  default_prompt: "Use $refactor-for-review to prepare this change for review."

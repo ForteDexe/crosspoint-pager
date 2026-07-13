@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scope Discipline"
+  short_description: "Keep features aligned with reader constraints"
+  default_prompt: "Use $scope-discipline to assess this firmware feature."
