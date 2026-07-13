@@ -1,4 +1,6 @@
 #pragma once
+#include <HalDisplay.h>
+
 #include "activities/Activity.h"
 
 class Bitmap;
@@ -20,12 +22,15 @@ class SleepActivity final : public Activity {
   void renderBitmapSleepScreen(const Bitmap& bitmap) const;
   void renderLastScreenSleepScreen() const;
   void renderBlankSleepScreen() const;
-  void renderPagerSleepScreen() const;
+  HalDisplay::RefreshMode nextPagerRefreshMode();
+  void renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) const;
   void updatePagerText(const char* payload, size_t length);
 
   bool fromTimeout = false;
   bool pagerMode = false;
   bool pagerHasData = false;
+  int pagerUpdatesUntilCleanRefresh = 0;
+  HalDisplay::RefreshMode pagerRefreshMode = HalDisplay::HALF_REFRESH;
   static constexpr size_t PAGER_TITLE_BYTES = 80;
   static constexpr size_t PAGER_MESSAGE_BYTES = 180;
   static constexpr size_t PAGER_FOOTER_BYTES = 56;

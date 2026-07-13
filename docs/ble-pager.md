@@ -12,7 +12,9 @@ experiment, not an upstream CrossPoint feature.
 - The writable characteristic accepts UTF-8 `title\nmessage\nfooter` data,
   capped at 320 bytes.
 - The display is refreshed only when the received payload differs from the
-  previous one.
+  previous one. Changed pager messages use a fast e-ink refresh; the cleanup
+  refresh follows **Settings > Display > Refresh Frequency**, matching reader
+  page turns.
 
 The protocol identifiers are:
 

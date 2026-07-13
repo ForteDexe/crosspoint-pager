@@ -75,8 +75,10 @@ bool JsonSettingsIO::saveState(const CrossPointState& s, const char* path) {
   doc["recentSleepPos"] = s.recentSleepPos;
   doc["recentSleepFill"] = s.recentSleepFill;
   doc["readerActivityLoadCount"] = s.readerActivityLoadCount;
+  doc["readerPagesUntilFullRefresh"] = s.readerPagesUntilFullRefresh;
   doc["lastSleepFromReader"] = s.lastSleepFromReader;
   doc["showBootScreen"] = s.showBootScreen;
+  doc["restoreReaderRefreshCycle"] = s.restoreReaderRefreshCycle;
 
   String json;
   serializeJson(doc, json);
@@ -110,8 +112,10 @@ bool JsonSettingsIO::loadState(CrossPointState& s, const char* json) {
     if (legacy != UINT8_MAX) s.pushRecentSleep(static_cast<uint16_t>(legacy));
   }
   s.readerActivityLoadCount = doc["readerActivityLoadCount"] | static_cast<uint8_t>(0);
+  s.readerPagesUntilFullRefresh = doc["readerPagesUntilFullRefresh"] | static_cast<uint8_t>(0);
   s.lastSleepFromReader = doc["lastSleepFromReader"] | false;
   s.showBootScreen = doc["showBootScreen"] | true;
+  s.restoreReaderRefreshCycle = doc["restoreReaderRefreshCycle"] | false;
   return true;
 }
 

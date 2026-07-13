@@ -31,6 +31,8 @@ void TxtReaderActivity::onEnter() {
     return;
   }
 
+  ReaderUtils::restoreRefreshCycleAfterQuickResume(pagesUntilFullRefresh);
+
   ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
 
   txt->setupCacheDir();

@@ -14,8 +14,10 @@ class CrossPointState {
   uint8_t recentSleepPos = 0;                           // next write slot
   uint8_t recentSleepFill = 0;                          // valid entries (0..SLEEP_RECENT_COUNT)
   uint8_t readerActivityLoadCount = 0;
+  uint8_t readerPagesUntilFullRefresh = 0;
   bool lastSleepFromReader = false;
   bool showBootScreen = true;
+  bool restoreReaderRefreshCycle = false;
 
   // Returns true if idx was shown within the last checkCount picks.
   // Walks backwards from the most recently written slot.

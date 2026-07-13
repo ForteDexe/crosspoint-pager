@@ -31,6 +31,8 @@ void XtcReaderActivity::onEnter() {
     return;
   }
 
+  ReaderUtils::restoreRefreshCycleAfterQuickResume(pagesUntilFullRefresh);
+
   xtc->setupCacheDir();
 
   // Load saved progress
@@ -307,6 +309,7 @@ void XtcReaderActivity::renderPage() {
       renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
       pagesUntilFullRefresh--;
     }
+    APP_STATE.readerPagesUntilFullRefresh = static_cast<uint8_t>(pagesUntilFullRefresh);
 
     // Pass 2: LSB buffer - mark DARK gray only (XTH value 1)
     // In LUT: 0 bit = apply gray effect, 1 bit = untouched

@@ -40,7 +40,9 @@ secure context such as `localhost` or HTTPS.
 3. Enter a title, message, and footer, then select **Send pager update**.
 
 The browser writes a compact UTF-8 GATT payload to the device. Pager refreshes
-the e-ink screen only when that payload changes.
+the e-ink screen only when that payload changes. It uses fast e-ink refreshes
+for message updates and performs its cleanup refresh according to **Settings >
+Display > Refresh Frequency**.
 
 ## If the browser cannot find Pager
 

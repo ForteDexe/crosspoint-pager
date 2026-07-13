@@ -249,6 +249,7 @@ void enterDeepSleep(bool fromTimeout = false) {
       (fromTimeout &&
        SETTINGS.quickResumeSleepScreen == CrossPointSettings::QUICK_RESUME_SLEEP_SCREEN::QUICK_RESUME_AFTER_TIMEOUT);
   APP_STATE.showBootScreen = !isQuickResumeSleep;
+  APP_STATE.restoreReaderRefreshCycle = isQuickResumeSleep && APP_STATE.lastSleepFromReader;
 
   APP_STATE.saveToFile();
 
@@ -437,7 +438,7 @@ void setup() {
         // Frame restored: swap the sleep moon for the loading icon.
         const auto pageHeight = renderer.getScreenHeight();
         renderer.drawImage(LoadingIcon, 0, pageHeight - LOADINGICON_HEIGHT, LOADINGICON_WIDTH, LOADINGICON_HEIGHT);
-        renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+        renderer.displayBuffer(HalDisplay::FAST_REFRESH);
       } else {
         activityManager.goToBoot();  // frame file missing, fall back to the splash
       }
@@ -474,6 +475,11 @@ void setup() {
     APP_STATE.readerActivityLoadCount++;
     APP_STATE.saveToFile();
     activityManager.goToReader(path);
+  }
+
+  if (resume == BootResume::QuickResume && !activityManager.isReaderActivity()) {
+    APP_STATE.restoreReaderRefreshCycle = false;
+    APP_STATE.saveToFile();
   }
 
   if (resume == BootResume::Silent) {

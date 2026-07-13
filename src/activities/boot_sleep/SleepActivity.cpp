@@ -22,13 +22,14 @@ void SleepActivity::onEnter() {
 
   pagerMode = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::PAGER;
   if (pagerMode) {
+    pagerUpdatesUntilCleanRefresh = SETTINGS.getRefreshFrequency();
     char payload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
     const size_t payloadLength = blePager.takePayload(payload, sizeof(payload));
     if (payloadLength > 0) {
       updatePagerText(payload, payloadLength);
     }
     blePager.begin();
-    renderPagerSleepScreen();
+    renderPagerSleepScreen(pagerRefreshMode);
     return;
   }
 
@@ -89,17 +90,28 @@ void SleepActivity::loop() {
   const size_t payloadLength = blePager.takePayload(payload, sizeof(payload));
   if (payloadLength > 0) {
     updatePagerText(payload, payloadLength);
+    pagerRefreshMode = nextPagerRefreshMode();
     requestUpdate();
   }
 }
 
 void SleepActivity::render(RenderLock&&) {
   if (pagerMode) {
-    renderPagerSleepScreen();
+    renderPagerSleepScreen(pagerRefreshMode);
   }
 }
 
 bool SleepActivity::preventAutoSleep() { return pagerMode; }
+
+HalDisplay::RefreshMode SleepActivity::nextPagerRefreshMode() {
+  if (pagerUpdatesUntilCleanRefresh <= 1) {
+    pagerUpdatesUntilCleanRefresh = SETTINGS.getRefreshFrequency();
+    return HalDisplay::HALF_REFRESH;
+  }
+
+  pagerUpdatesUntilCleanRefresh--;
+  return HalDisplay::FAST_REFRESH;
+}
 
 void SleepActivity::updatePagerText(const char* payload, size_t length) {
   const char* cursor = payload;
@@ -130,7 +142,7 @@ void SleepActivity::updatePagerText(const char* payload, size_t length) {
   pagerHasData = true;
 }
 
-void SleepActivity::renderPagerSleepScreen() const {
+void SleepActivity::renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) const {
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
   const auto& metrics = UITheme::getInstance().getMetrics();
@@ -147,7 +159,7 @@ void SleepActivity::renderPagerSleepScreen() const {
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
   }
   renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - metrics.buttonHintsHeight - 15, tr(STR_PAGER_EXIT_HINT));
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  renderer.displayBuffer(refreshMode);
 }
 
 void SleepActivity::renderCustomSleepScreen() const {
@@ -423,7 +435,7 @@ void SleepActivity::renderCoverSleepScreen() const {
 void SleepActivity::renderLastScreenSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
   renderer.drawImage(MoonIcon, 0, pageHeight - MOONICON_HEIGHT, MOONICON_WIDTH, MOONICON_HEIGHT);
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
 
 void SleepActivity::renderBlankSleepScreen() const {

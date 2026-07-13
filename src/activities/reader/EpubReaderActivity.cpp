@@ -155,6 +155,8 @@ void EpubReaderActivity::onEnter() {
     return;
   }
 
+  ReaderUtils::restoreRefreshCycleAfterQuickResume(pagesUntilFullRefresh);
+
   // Configure screen orientation based on settings
   // NOTE: This affects layout math and must be applied before any render calls.
   ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
@@ -1066,6 +1068,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     // HALF ghost-cleanup path, which drives every pixel to its target
     // regardless of residue.
     pagesUntilFullRefresh = 1;
+    APP_STATE.readerPagesUntilFullRefresh = static_cast<uint8_t>(pagesUntilFullRefresh);
   } else {
     ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
   }

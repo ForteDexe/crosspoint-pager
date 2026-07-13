@@ -1,5 +1,6 @@
 #pragma once
 
+#include <CrossPointState.h>
 #include <CrossPointSettings.h>
 #include <GfxRenderer.h>
 #include <HalTiltSensor.h>
@@ -67,6 +68,17 @@ inline void displayWithRefreshCycle(const GfxRenderer& renderer, int& pagesUntil
     renderer.displayBuffer();
     pagesUntilFullRefresh--;
   }
+  APP_STATE.readerPagesUntilFullRefresh = static_cast<uint8_t>(pagesUntilFullRefresh);
+}
+
+inline void restoreRefreshCycleAfterQuickResume(int& pagesUntilFullRefresh) {
+  if (!APP_STATE.restoreReaderRefreshCycle) {
+    return;
+  }
+
+  pagesUntilFullRefresh = APP_STATE.readerPagesUntilFullRefresh;
+  APP_STATE.restoreReaderRefreshCycle = false;
+  APP_STATE.saveToFile();
 }
 
 // Grayscale anti-aliasing pass. Renders content twice (LSB + MSB) to build

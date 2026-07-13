@@ -23,6 +23,6 @@ The browser must use `localhost` or HTTPS; do not open `index.html` directly as 
 
 ## Current power behavior
 
-Pager is intentionally not true deep sleep: ESP32-C3 deep sleep powers the BLE radio off. In this first implementation it is a powered-on standby screen and performs an e-ink refresh only after a changed payload arrives. Measuring light-sleep/periodic-wake power and designing reconnect behavior are follow-up hardware work.
+Pager is intentionally not true deep sleep: ESP32-C3 deep sleep powers the BLE radio off. In this first implementation it is a powered-on standby screen and performs an e-ink refresh only after a changed payload arrives. Message updates use fast refresh; the cleanup refresh follows **Settings > Display > Refresh Frequency**. Measuring light-sleep/periodic-wake power and designing reconnect behavior are follow-up hardware work.
 
 For architecture and the advertising/CPU-clock fixes that made the service discoverable, see [BLE Pager experiment](../../docs/ble-pager.md).
