@@ -2,7 +2,8 @@
 
 ## Project and scope
 
-This fork is based on CrossPoint Reader's `feat-bluetooth` branch and explores
+This fork starts dashboard work from CrossPoint Reader v1.4.1; the upstream
+`feat-bluetooth` branch is retained only as a BLE HID reference. It explores
 an opt-in BLE dashboard for Xteink X3/X4. Preserve normal reader behavior and
 upstream compatibility. The upstream project scope rejects active connectivity;
 keep this experiment passive, low-power, user-controlled, and isolated from the

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CrossPoint BLE Dashboard Test</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>CrossPoint BLE Dashboard Test</h1>
+      <p class="intro">Connect to a device advertising as <code>CrossPoint Dashboard</code>, then send its three-line dashboard payload.</p>
+
+      <section class="connection" aria-label="Bluetooth connection">
+        <button id="connect" type="button">Connect Bluetooth</button>
+        <button id="disconnect" type="button" disabled>Disconnect</button>
+        <output id="connection-status" role="status">Not connected</output>
+      </section>
+
+      <form id="dashboard-form">
+        <label>
+          Title
+          <input id="title" maxlength="80" value="Build complete" />
+        </label>
+        <label>
+          Message
+          <textarea id="message" maxlength="180" rows="4">Hello from the PC test page.</textarea>
+        </label>
+        <label>
+          Footer
+          <input id="footer" maxlength="56" value="CrossPoint BLE dashboard" />
+        </label>
+        <p id="payload-size" class="hint"></p>
+        <button id="send" type="submit" disabled>Send dashboard update</button>
+      </form>
+
+      <output id="send-status" role="status"></output>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

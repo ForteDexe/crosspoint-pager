@@ -3,6 +3,7 @@
 #include <FontCacheManager.h>
 #include <FontDecompressor.h>
 #include <GfxRenderer.h>
+#include <HalBleDashboard.h>
 #include <HalClock.h>
 #include <HalDisplay.h>
 #include <HalGPIO.h>
@@ -238,6 +239,11 @@ void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
+  // BLE needs the MCU and radio running. Dashboard is therefore an explicit
+  // powered-on standby mode, not ESP32 deep sleep. It remains opt-in and is
+  // responsible for rendering only when a changed GATT payload is received.
+  const bool isDashboardSleep = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::DASHBOARD;
+
   const bool isQuickResumeSleep =
       SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
       (fromTimeout &&
@@ -246,10 +252,22 @@ void enterDeepSleep(bool fromTimeout = false) {
 
   APP_STATE.saveToFile();
 
+  if (isDashboardSleep && WiFi.getMode() != WIFI_MODE_NULL) {
+    // Dashboard is intentionally BLE-only until radio coexistence has an
+    // explicit RAM and current-draw budget.
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+  }
+
   // Commit to sleeping before goToSleep() runs the outgoing activity's onExit():
   // a WiFi activity would otherwise silentRestart() here and reboot instead.
-  deepSleepInProgress = true;
+  deepSleepInProgress = !isDashboardSleep;
   activityManager.goToSleep(fromTimeout);
+
+  if (isDashboardSleep) {
+    LOG_INF("MAIN", "Dashboard standby active; deep sleep skipped for BLE");
+    return;
+  }
 
   if (isQuickResumeSleep) {
     saveSleepFrameBuffer();
@@ -597,11 +615,17 @@ void loop() {
     powerManager.setPowerSaving(false);  // Make sure we're at full performance when skipLoopDelay is requested
     yield();                             // Give FreeRTOS a chance to run tasks, but return immediately
   } else {
-    if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
+    // ESP32-C3's BLE controller is not reliable at the 10 MHz idle clock.
+    // Keep normal frequency whenever the opt-in dashboard service owns the
+    // radio; BLE is otherwise completely stopped outside pairing/dashboard.
+    if (!bleDashboard.isRunning() && millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
       delay(50);
     } else {
+      if (bleDashboard.isRunning()) {
+        powerManager.setPowerSaving(false);
+      }
       // Short delay to prevent tight loop while still being responsive
       delay(10);
     }

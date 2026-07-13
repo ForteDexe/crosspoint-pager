@@ -3,6 +3,7 @@
 #include <Epub.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
+#include <HalBleDashboard.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Txt.h>
@@ -18,6 +19,18 @@
 
 void SleepActivity::onEnter() {
   Activity::onEnter();
+
+  dashboardMode = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::DASHBOARD;
+  if (dashboardMode) {
+    char payload[HalBleDashboard::MAX_PAYLOAD_BYTES + 1] = {};
+    const size_t payloadLength = bleDashboard.takePayload(payload, sizeof(payload));
+    if (payloadLength > 0) {
+      updateDashboardText(payload, payloadLength);
+    }
+    bleDashboard.begin();
+    renderDashboardSleepScreen();
+    return;
+  }
 
   const bool renderQuickResume =
       SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
@@ -53,6 +66,88 @@ void SleepActivity::onEnter() {
     default:
       return renderDefaultSleepScreen();
   }
+}
+
+void SleepActivity::onExit() {
+  if (dashboardMode) {
+    bleDashboard.end();
+  }
+  Activity::onExit();
+}
+
+void SleepActivity::loop() {
+  if (!dashboardMode) {
+    return;
+  }
+
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    onGoHome();
+    return;
+  }
+
+  char payload[HalBleDashboard::MAX_PAYLOAD_BYTES + 1] = {};
+  const size_t payloadLength = bleDashboard.takePayload(payload, sizeof(payload));
+  if (payloadLength > 0) {
+    updateDashboardText(payload, payloadLength);
+    requestUpdate();
+  }
+}
+
+void SleepActivity::render(RenderLock&&) {
+  if (dashboardMode) {
+    renderDashboardSleepScreen();
+  }
+}
+
+bool SleepActivity::preventAutoSleep() { return dashboardMode; }
+
+void SleepActivity::updateDashboardText(const char* payload, size_t length) {
+  const char* cursor = payload;
+  size_t remaining = length;
+
+  const auto copyLine = [&cursor, &remaining](char* destination, size_t destinationSize) {
+    size_t written = 0;
+    while (remaining > 0 && *cursor != '\n') {
+      const char character = *cursor++;
+      remaining--;
+      if (character == '\r') {
+        continue;
+      }
+      if (written + 1 < destinationSize) {
+        destination[written++] = static_cast<unsigned char>(character) < 0x20 ? '?' : character;
+      }
+    }
+    if (remaining > 0 && *cursor == '\n') {
+      cursor++;
+      remaining--;
+    }
+    destination[written] = '\0';
+  };
+
+  copyLine(dashboardTitle, sizeof(dashboardTitle));
+  copyLine(dashboardMessage, sizeof(dashboardMessage));
+  copyLine(dashboardFooter, sizeof(dashboardFooter));
+  dashboardHasData = true;
+}
+
+void SleepActivity::renderDashboardSleepScreen() const {
+  const auto pageWidth = renderer.getScreenWidth();
+  const auto pageHeight = renderer.getScreenHeight();
+  const auto& metrics = UITheme::getInstance().getMetrics();
+
+  renderer.clearScreen();
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_DASHBOARD));
+  if (dashboardHasData) {
+    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 70, dashboardTitle, true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, dashboardMessage);
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 55, dashboardFooter);
+  } else {
+    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, tr(STR_BLUETOOTH_WAITING), true,
+                              EpdFontFamily::BOLD);
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_DASHBOARD_STANDBY));
+  }
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - metrics.buttonHintsHeight - 15, tr(STR_DASHBOARD_EXIT_HINT));
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
 
 void SleepActivity::renderCustomSleepScreen() const {
