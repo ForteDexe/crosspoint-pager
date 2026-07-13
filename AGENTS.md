@@ -82,10 +82,41 @@ and collecting relevant build, heap, or current-draw evidence.
 ## Git workflow
 
 This checkout uses `origin` for `ForteDexe/crosspoint-reader` and `upstream` for
-`crosspoint-reader/crosspoint-reader`; `dashboard-ble` tracks
-`upstream/feat-bluetooth`. Check `git status --short`, the current branch, and
-remotes before Git operations. Fetch upstream before starting a substantial
-feature, preserve unrelated user changes, and push only when requested.
+`crosspoint-reader/crosspoint-reader`. `feature/ble-pager` is the active Pager
+line and is intended to be this fork's default branch. `upstream/feat-bluetooth`
+is a BLE HID reference only; never merge it into Pager. Check `git status
+--short`, the current branch, and remotes before Git operations. Fetch upstream
+before starting a substantial feature, preserve unrelated user changes, and
+push only when requested.
+
+## Upstream-sync guard
+
+Never merge or rebase `upstream/master` directly into the published Pager line.
+Upstream deliberately does not share this fork's BLE Pager scope, so a routine
+update can silently remove Pager behavior or reintroduce incompatible power
+management.
+
+For every upstream update:
+
+1. Fetch `upstream`, then create a disposable branch such as
+   `sync/upstream-YYYY-MM-DD` from `feature/ble-pager`.
+2. Merge `upstream/master` into that branch and resolve conflicts there. Do not
+   force-push, reset, or rewrite the published Pager branch.
+3. Explicitly review these Pager-owned surfaces before proposing the merge:
+   `lib/hal/HalBlePager.*`, `lib/hal/HalPowerManager.*`,
+   `src/activities/boot_sleep/SleepActivity.*`, `src/main.cpp`,
+   `platformio.ini`, `sdkconfig.pager-power`, Pager translations, and
+   `docs/ble-pager*.md`.
+4. Preserve the normal `default` firmware as reader-only. Pager modem/light
+   sleep must remain isolated to `pager_power`; do not carry its SDK config
+   into the default environment.
+5. Build both `default` and `pager_power`. For changes touching Pager, also
+   perform X3 smoke tests: BLE discovery after the power button is released,
+   browser message delivery, power-button exit/reader return, and low-battery
+   behavior where practical.
+6. Present the integration diff and verification results to the user. Merge it
+   into `feature/ble-pager` only after review/approval, then keep the sync
+   branch until the remote update is confirmed.
 
 Use focused commits with a conventional prefix (`feat:`, `fix:`, `refactor:`,
 `docs:`, `test:`, `chore:`, or `perf:`). Keep refactors separate from behavior
