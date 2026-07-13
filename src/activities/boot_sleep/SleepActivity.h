@@ -18,6 +18,7 @@ class SleepActivity final : public Activity {
   void render(RenderLock&&) override;
   bool preventAutoSleep() override;
   bool shouldEnterDeepSleep() override;
+  bool handlesPowerButtonSleepGesture() const override { return pagerMode; }
 
  private:
   void renderDefaultSleepScreen() const;
@@ -27,7 +28,8 @@ class SleepActivity final : public Activity {
   void renderLastScreenSleepScreen() const;
   void renderBlankSleepScreen() const;
   void renderPagerLowBatterySleepScreen() const;
-  void checkPagerBatteryLevel();
+  void checkPagerBatteryLevel(bool force = false);
+  void exitPager();
   HalDisplay::RefreshMode nextPagerRefreshMode();
   void renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) const;
   void updatePagerText(const char* payload, size_t length);
@@ -35,15 +37,25 @@ class SleepActivity final : public Activity {
   bool fromTimeout = false;
   bool pagerLowBatterySleep = false;
   bool pagerMode = false;
+  bool pagerReturnToReader = false;
   bool pagerHasData = false;
   bool pagerLowBatteryDetected = false;
+  unsigned long pagerPowerButtonPressedAt = 0;
   unsigned long lastPagerBatteryCheckMs = 0;
+  uint16_t pagerBatteryPercent = 100;
   int pagerUpdatesUntilCleanRefresh = 0;
-  HalDisplay::RefreshMode pagerRefreshMode = HalDisplay::HALF_REFRESH;
+  // Enter Pager with the X3 differential waveform; HALF_REFRESH requests a
+  // panel resync and looks like a full refresh. Message cleanup still follows
+  // Settings > Display > Refresh Frequency via nextPagerRefreshMode().
+  HalDisplay::RefreshMode pagerRefreshMode = HalDisplay::FAST_REFRESH;
   static constexpr size_t PAGER_TITLE_BYTES = 80;
   static constexpr size_t PAGER_MESSAGE_BYTES = 180;
   static constexpr size_t PAGER_FOOTER_BYTES = 56;
   static constexpr uint16_t PAGER_LOW_BATTERY_PERCENT = 25;
+  // Above this threshold, a slow probe is enough to notice the transition;
+  // at or below it, poll promptly so the 25% deep-sleep safeguard is timely.
+  static constexpr uint16_t PAGER_LOW_BATTERY_POLL_START_PERCENT = 40;
+  static constexpr unsigned long PAGER_HEALTHY_BATTERY_PROBE_MS = 15UL * 60UL * 1000UL;
   char pagerTitle[PAGER_TITLE_BYTES] = {};
   char pagerMessage[PAGER_MESSAGE_BYTES] = {};
   char pagerFooter[PAGER_FOOTER_BYTES] = {};

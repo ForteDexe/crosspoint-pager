@@ -101,6 +101,7 @@ class ActivityManager {
 
   bool preventAutoSleep() const;
   bool shouldEnterDeepSleep() const;
+  bool handlesPowerButtonSleepGesture() const;
   bool isReaderActivity() const;
   bool skipLoopDelay() const;
   ScreenshotInfo getScreenshotInfo() const;

@@ -585,7 +585,8 @@ void loop() {
     return;
   }
 
-  if (!powerSleepGestureConsumed && millis() >= allowSleepAt && gpio.isPressed(HalGPIO::BTN_POWER) &&
+  if (!activityManager.handlesPowerButtonSleepGesture() && !powerSleepGestureConsumed && millis() >= allowSleepAt &&
+      gpio.isPressed(HalGPIO::BTN_POWER) &&
       gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
     // If the screenshot combination is potentially being pressed, don't sleep
     if (gpio.isPressed(HalGPIO::BTN_DOWN)) {
@@ -598,7 +599,8 @@ void loop() {
   }
 
   // Refresh screen when power button is short-pressed with FORCE_REFRESH setting.
-  if (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::FORCE_REFRESH &&
+  if (!activityManager.handlesPowerButtonSleepGesture() &&
+      SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::FORCE_REFRESH &&
       mappedInputManager.wasReleased(MappedInputManager::Button::Power)) {
     LOG_DBG("MAIN", "Manual screen refresh triggered");
     RenderLock lock;

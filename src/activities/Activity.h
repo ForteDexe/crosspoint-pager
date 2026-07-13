@@ -44,6 +44,9 @@ class Activity {
   virtual bool skipLoopDelay() { return false; }
   virtual bool preventAutoSleep() { return false; }
   virtual bool shouldEnterDeepSleep() { return false; }
+  // Activities such as Pager may own the power-button gesture instead of
+  // letting main.cpp treat it as a request to enter deep sleep.
+  virtual bool handlesPowerButtonSleepGesture() const { return false; }
   virtual bool isReaderActivity() const { return false; }
   virtual ScreenshotInfo getScreenshotInfo() const { return {}; }
 

@@ -16,6 +16,16 @@ experiment, not an upstream CrossPoint feature.
   page turns.
 - At 25% battery or lower, Pager stops BLE, shows a low-battery sleep message,
   and enters deep sleep using the Quick Resume presentation.
+- While Pager is active, the front and side buttons are ignored. Hold the
+  physical power button for the configured power-button duration, then release
+  it to exit Pager. When Pager was entered from a book, it reopens that book at
+  its saved reading position and continues the reader's refresh cycle; otherwise
+  it returns to Home.
+- Pager's existing themed header shows the battery when the screen opens and
+  whenever a changed message redraws it; it never refreshes e-ink solely for
+  the battery. Above 40%, the low-battery safeguard samples only every 15
+  minutes. At 40% or below it samples every 1.5 seconds and enters deep sleep
+  at 25% or below.
 
 The protocol identifiers are:
 

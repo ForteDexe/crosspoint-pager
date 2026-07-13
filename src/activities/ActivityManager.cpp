@@ -252,6 +252,10 @@ bool ActivityManager::shouldEnterDeepSleep() const {
   return currentActivity && currentActivity->shouldEnterDeepSleep();
 }
 
+bool ActivityManager::handlesPowerButtonSleepGesture() const {
+  return currentActivity && currentActivity->handlesPowerButtonSleepGesture();
+}
+
 bool ActivityManager::isReaderActivity() const {
   return std::any_of(stackActivities.begin(), stackActivities.end(),
                      [](const auto& activity) { return activity->isReaderActivity(); }) ||

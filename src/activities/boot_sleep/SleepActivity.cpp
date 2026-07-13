@@ -28,8 +28,12 @@ void SleepActivity::onEnter() {
 
   pagerMode = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::PAGER;
   if (pagerMode) {
+    // Pager replaces the reader activity instead of deep-sleeping it. Preserve
+    // the normal sleep-wake destination so its power-button exit reopens the
+    // book at its already-persisted reading position.
+    pagerReturnToReader = APP_STATE.lastSleepFromReader && !APP_STATE.openEpubPath.empty();
     pagerUpdatesUntilCleanRefresh = SETTINGS.getRefreshFrequency();
-    checkPagerBatteryLevel();
+    checkPagerBatteryLevel(true);
     if (pagerLowBatteryDetected) {
       return;
     }
@@ -104,14 +108,26 @@ void SleepActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    onGoHome();
+  if (mappedInput.wasPressed(MappedInputManager::Button::Power)) {
+    pagerPowerButtonPressedAt = millis();
+  }
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Power) &&
+      pagerPowerButtonPressedAt != 0 &&
+      millis() - pagerPowerButtonPressedAt >= SETTINGS.getPowerButtonDuration()) {
+    exitPager();
     return;
   }
 
   char payload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
   const size_t payloadLength = blePager.takePayload(payload, sizeof(payload));
   if (payloadLength > 0) {
+    // The screen will render below, so refresh the header's battery reading at
+    // the same time without scheduling a battery-only e-ink update.
+    checkPagerBatteryLevel(true);
+    if (pagerLowBatteryDetected) {
+      return;
+    }
     updatePagerText(payload, payloadLength);
     pagerRefreshMode = nextPagerRefreshMode();
     requestUpdate();
@@ -128,20 +144,37 @@ bool SleepActivity::preventAutoSleep() { return pagerMode; }
 
 bool SleepActivity::shouldEnterDeepSleep() { return pagerLowBatteryDetected; }
 
-void SleepActivity::checkPagerBatteryLevel() {
+void SleepActivity::checkPagerBatteryLevel(const bool force) {
   const unsigned long now = millis();
-  if (lastPagerBatteryCheckMs != 0 && now - lastPagerBatteryCheckMs < HalPowerManager::BATTERY_POLL_MS) {
+  const unsigned long interval = pagerBatteryPercent <= PAGER_LOW_BATTERY_POLL_START_PERCENT
+                                     ? HalPowerManager::BATTERY_POLL_MS
+                                     : PAGER_HEALTHY_BATTERY_PROBE_MS;
+  if (!force && lastPagerBatteryCheckMs != 0 && now - lastPagerBatteryCheckMs < interval) {
     return;
   }
   lastPagerBatteryCheckMs = now;
 
-  const uint16_t batteryPercent = powerManager.getBatteryPercentage();
-  if (batteryPercent > PAGER_LOW_BATTERY_PERCENT) {
+  pagerBatteryPercent = powerManager.getBatteryPercentage();
+  if (pagerBatteryPercent > PAGER_LOW_BATTERY_PERCENT) {
     return;
   }
 
   pagerLowBatteryDetected = true;
-  LOG_INF("PAGER", "Battery at %u%%; entering deep sleep", batteryPercent);
+  LOG_INF("PAGER", "Battery at %u%%; entering deep sleep", pagerBatteryPercent);
+}
+
+void SleepActivity::exitPager() {
+  if (pagerReturnToReader) {
+    // Pager stays powered and has replaced the reader activity, so it does
+    // not pass through the normal Quick Resume boot path. Re-arm that same
+    // saved refresh-cycle handoff before reopening the book; otherwise the
+    // fresh reader starts at zero and immediately forces a HALF refresh.
+    APP_STATE.restoreReaderRefreshCycle = true;
+    APP_STATE.saveToFile();
+    onSelectBook(APP_STATE.openEpubPath);
+    return;
+  }
+  onGoHome();
 }
 
 HalDisplay::RefreshMode SleepActivity::nextPagerRefreshMode() {
@@ -199,7 +232,6 @@ void SleepActivity::renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) 
                               EpdFontFamily::BOLD);
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
   }
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - metrics.buttonHintsHeight - 15, tr(STR_PAGER_EXIT_HINT));
   renderer.displayBuffer(refreshMode);
 }
 
