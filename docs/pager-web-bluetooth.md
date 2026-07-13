@@ -7,10 +7,34 @@ Use this guide to send test messages from a PC to the Xteink Pager screen.
 > Bluetooth pairing screen. Connect through the Web Bluetooth chooser in the
 > Pager test page instead.
 
+## Build the firmware
+
+The build uses a project-local Conda environment in `.conda`. It needs Conda's
+`python` (version 3.11) and `pip` packages, plus the `platformio` Python
+package. Create it once from the repository root:
+
+```powershell
+conda create --prefix .conda python=3.11 pip -y
+conda run --prefix .conda python -m pip install platformio==6.1.19
+```
+
+`bleak` is not required: the Pager test page uses the browser's Web Bluetooth
+API and Python's built-in HTTP server.
+
+Build the Xteink firmware with:
+
+```powershell
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
+.\.conda\Scripts\pio.exe run -e default
+```
+
+The first build downloads the ESP32 platform and toolchain. On success, the
+flashable file is `.pio\build\default\firmware.bin`.
+
 ## Before starting
 
-1. Build the firmware, then open
-   [CrossPoint Flash Tools](https://crosspointreader.com/#flash-tools).
+1. Open [CrossPoint Flash Tools](https://crosspointreader.com/#flash-tools).
 2. In the flash tool, select and flash the built
    `.pio\build\default\firmware.bin` file from this repository.
 3. On the device, open **Settings → System → Bluetooth Pairing** to confirm it
