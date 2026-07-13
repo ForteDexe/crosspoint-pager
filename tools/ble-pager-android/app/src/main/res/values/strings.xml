@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CrossPoint Pager</string>
+    <string name="relay_channel_name">Pager delivery</string>
+    <string name="relay_notification_title">CrossPoint Pager is ready</string>
+    <string name="relay_notification_text">New notifications will be sent to CrossPoint Pager.</string>
+    <string name="notification_access_required">Allow notification access for CrossPoint Pager first.</string>
+    <string name="payload_byte_count">%1$d / %2$d UTF-8 bytes</string>
+</resources>
