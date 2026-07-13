@@ -1,4 +1,4 @@
-#include "HalBleDashboard.h"
+#include "HalBlePager.h"
 
 #include <Logging.h>
 #include <NimBLEDevice.h>
@@ -6,35 +6,35 @@
 #include <cstring>
 
 namespace {
-constexpr char DEVICE_NAME[] = "CrossPoint Dashboard";
+constexpr char DEVICE_NAME[] = "CrossPoint Pager";
 constexpr char SERVICE_UUID[] = "ca7b0001-6f6f-4d9f-9d78-3d9c4a9ed001";
 constexpr char PAYLOAD_UUID[] = "ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001";
 
-class DashboardServerCallbacks final : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer*, NimBLEConnInfo&) override { bleDashboard.setConnected(true); }
+class PagerServerCallbacks final : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer*, NimBLEConnInfo&) override { blePager.setConnected(true); }
 
   void onDisconnect(NimBLEServer*, NimBLEConnInfo&, int) override {
-    bleDashboard.setConnected(false);
-    if (bleDashboard.isRunning()) {
+    blePager.setConnected(false);
+    if (blePager.isRunning()) {
       NimBLEDevice::startAdvertising();
     }
   }
 };
 
-class DashboardPayloadCallbacks final : public NimBLECharacteristicCallbacks {
+class PagerPayloadCallbacks final : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo&) override {
     const NimBLEAttValue value = characteristic->getValue();
-    bleDashboard.storePayload(value.data(), value.length());
+    blePager.storePayload(value.data(), value.length());
   }
 };
 
-DashboardServerCallbacks serverCallbacks;
-DashboardPayloadCallbacks payloadCallbacks;
+PagerServerCallbacks serverCallbacks;
+PagerPayloadCallbacks payloadCallbacks;
 }  // namespace
 
-HalBleDashboard bleDashboard;
+HalBlePager blePager;
 
-bool HalBleDashboard::begin() {
+bool HalBlePager::begin() {
   if (running) {
     return true;
   }
@@ -54,7 +54,7 @@ bool HalBleDashboard::begin() {
 
   auto* service = server->createService(SERVICE_UUID);
   if (service == nullptr) {
-    LOG_ERR("BLE", "Could not create dashboard service");
+    LOG_ERR("BLE", "Could not create pager service");
     NimBLEDevice::deinit(true);
     return false;
   }
@@ -62,7 +62,7 @@ bool HalBleDashboard::begin() {
   auto* characteristic =
       service->createCharacteristic(PAYLOAD_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR, MAX_PAYLOAD_BYTES);
   if (characteristic == nullptr) {
-    LOG_ERR("BLE", "Could not create dashboard characteristic");
+    LOG_ERR("BLE", "Could not create pager characteristic");
     NimBLEDevice::deinit(true);
     return false;
   }
@@ -80,22 +80,22 @@ bool HalBleDashboard::begin() {
   // custom service UUID in the primary packet for Web Bluetooth filtering.
   advertising->enableScanResponse(true);
   if (!advertising->setName(DEVICE_NAME)) {
-    LOG_ERR("BLE", "Could not set dashboard device name");
+    LOG_ERR("BLE", "Could not set pager device name");
     NimBLEDevice::deinit(true);
     return false;
   }
   if (!advertising->addServiceUUID(SERVICE_UUID)) {
-    LOG_ERR("BLE", "Could not add dashboard service UUID");
+    LOG_ERR("BLE", "Could not add pager service UUID");
     NimBLEDevice::deinit(true);
     return false;
   }
   if (!advertising->start()) {
-    LOG_ERR("BLE", "Could not start dashboard advertising");
+    LOG_ERR("BLE", "Could not start pager advertising");
     NimBLEDevice::deinit(true);
     return false;
   }
   if (!advertising->isAdvertising()) {
-    LOG_ERR("BLE", "Dashboard advertiser is not active after start");
+    LOG_ERR("BLE", "Pager advertiser is not active after start");
     NimBLEDevice::deinit(true);
     return false;
   }
@@ -104,11 +104,11 @@ bool HalBleDashboard::begin() {
   running = true;
   connected = false;
   portEXIT_CRITICAL(&payloadMutex);
-  LOG_INF("BLE", "Dashboard advertising started");
+  LOG_INF("BLE", "Pager advertising started");
   return true;
 }
 
-void HalBleDashboard::end() {
+void HalBlePager::end() {
   portENTER_CRITICAL(&payloadMutex);
   if (!running) {
     portEXIT_CRITICAL(&payloadMutex);
@@ -119,24 +119,24 @@ void HalBleDashboard::end() {
   portEXIT_CRITICAL(&payloadMutex);
 
   NimBLEDevice::deinit(true);
-  LOG_INF("BLE", "Dashboard stopped");
+  LOG_INF("BLE", "Pager stopped");
 }
 
-bool HalBleDashboard::isRunning() const {
+bool HalBlePager::isRunning() const {
   portENTER_CRITICAL(&payloadMutex);
   const bool result = running;
   portEXIT_CRITICAL(&payloadMutex);
   return result;
 }
 
-bool HalBleDashboard::isConnected() const {
+bool HalBlePager::isConnected() const {
   portENTER_CRITICAL(&payloadMutex);
   const bool result = connected;
   portEXIT_CRITICAL(&payloadMutex);
   return result;
 }
 
-size_t HalBleDashboard::takePayload(char* destination, size_t destinationSize) {
+size_t HalBlePager::takePayload(char* destination, size_t destinationSize) {
   if (destination == nullptr || destinationSize < MAX_PAYLOAD_BYTES + 1) {
     return 0;
   }
@@ -154,13 +154,13 @@ size_t HalBleDashboard::takePayload(char* destination, size_t destinationSize) {
   return result;
 }
 
-void HalBleDashboard::setConnected(bool isConnected) {
+void HalBlePager::setConnected(bool isConnected) {
   portENTER_CRITICAL(&payloadMutex);
   connected = isConnected;
   portEXIT_CRITICAL(&payloadMutex);
 }
 
-void HalBleDashboard::storePayload(const uint8_t* data, size_t length) {
+void HalBlePager::storePayload(const uint8_t* data, size_t length) {
   if (data == nullptr || length == 0 || length > MAX_PAYLOAD_BYTES) {
     return;
   }

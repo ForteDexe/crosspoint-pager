@@ -1,7 +1,7 @@
 #include "BluetoothPairingActivity.h"
 
 #include <GfxRenderer.h>
-#include <HalBleDashboard.h>
+#include <HalBlePager.h>
 #include <I18n.h>
 #include <WiFi.h>
 
@@ -16,13 +16,13 @@ void BluetoothPairingActivity::onEnter() {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
   }
-  started = bleDashboard.begin();
-  connected = bleDashboard.isConnected();
+  started = blePager.begin();
+  connected = blePager.isConnected();
   requestUpdate();
 }
 
 void BluetoothPairingActivity::onExit() {
-  bleDashboard.end();
+  blePager.end();
   Activity::onExit();
 }
 
@@ -32,7 +32,7 @@ void BluetoothPairingActivity::loop() {
     return;
   }
 
-  const bool nextConnected = bleDashboard.isConnected();
+  const bool nextConnected = blePager.isConnected();
   if (nextConnected != connected) {
     connected = nextConnected;
     requestUpdate();

@@ -3,7 +3,7 @@
 #include <Epub.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
-#include <HalBleDashboard.h>
+#include <HalBlePager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Txt.h>
@@ -20,15 +20,15 @@
 void SleepActivity::onEnter() {
   Activity::onEnter();
 
-  dashboardMode = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::DASHBOARD;
-  if (dashboardMode) {
-    char payload[HalBleDashboard::MAX_PAYLOAD_BYTES + 1] = {};
-    const size_t payloadLength = bleDashboard.takePayload(payload, sizeof(payload));
+  pagerMode = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::PAGER;
+  if (pagerMode) {
+    char payload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
+    const size_t payloadLength = blePager.takePayload(payload, sizeof(payload));
     if (payloadLength > 0) {
-      updateDashboardText(payload, payloadLength);
+      updatePagerText(payload, payloadLength);
     }
-    bleDashboard.begin();
-    renderDashboardSleepScreen();
+    blePager.begin();
+    renderPagerSleepScreen();
     return;
   }
 
@@ -69,14 +69,14 @@ void SleepActivity::onEnter() {
 }
 
 void SleepActivity::onExit() {
-  if (dashboardMode) {
-    bleDashboard.end();
+  if (pagerMode) {
+    blePager.end();
   }
   Activity::onExit();
 }
 
 void SleepActivity::loop() {
-  if (!dashboardMode) {
+  if (!pagerMode) {
     return;
   }
 
@@ -85,23 +85,23 @@ void SleepActivity::loop() {
     return;
   }
 
-  char payload[HalBleDashboard::MAX_PAYLOAD_BYTES + 1] = {};
-  const size_t payloadLength = bleDashboard.takePayload(payload, sizeof(payload));
+  char payload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
+  const size_t payloadLength = blePager.takePayload(payload, sizeof(payload));
   if (payloadLength > 0) {
-    updateDashboardText(payload, payloadLength);
+    updatePagerText(payload, payloadLength);
     requestUpdate();
   }
 }
 
 void SleepActivity::render(RenderLock&&) {
-  if (dashboardMode) {
-    renderDashboardSleepScreen();
+  if (pagerMode) {
+    renderPagerSleepScreen();
   }
 }
 
-bool SleepActivity::preventAutoSleep() { return dashboardMode; }
+bool SleepActivity::preventAutoSleep() { return pagerMode; }
 
-void SleepActivity::updateDashboardText(const char* payload, size_t length) {
+void SleepActivity::updatePagerText(const char* payload, size_t length) {
   const char* cursor = payload;
   size_t remaining = length;
 
@@ -124,29 +124,29 @@ void SleepActivity::updateDashboardText(const char* payload, size_t length) {
     destination[written] = '\0';
   };
 
-  copyLine(dashboardTitle, sizeof(dashboardTitle));
-  copyLine(dashboardMessage, sizeof(dashboardMessage));
-  copyLine(dashboardFooter, sizeof(dashboardFooter));
-  dashboardHasData = true;
+  copyLine(pagerTitle, sizeof(pagerTitle));
+  copyLine(pagerMessage, sizeof(pagerMessage));
+  copyLine(pagerFooter, sizeof(pagerFooter));
+  pagerHasData = true;
 }
 
-void SleepActivity::renderDashboardSleepScreen() const {
+void SleepActivity::renderPagerSleepScreen() const {
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
   const auto& metrics = UITheme::getInstance().getMetrics();
 
   renderer.clearScreen();
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_DASHBOARD));
-  if (dashboardHasData) {
-    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 70, dashboardTitle, true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, dashboardMessage);
-    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 55, dashboardFooter);
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_PAGER));
+  if (pagerHasData) {
+    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 70, pagerTitle, true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, pagerMessage);
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 55, pagerFooter);
   } else {
     renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, tr(STR_BLUETOOTH_WAITING), true,
                               EpdFontFamily::BOLD);
-    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_DASHBOARD_STANDBY));
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
   }
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - metrics.buttonHintsHeight - 15, tr(STR_DASHBOARD_EXIT_HINT));
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - metrics.buttonHintsHeight - 15, tr(STR_PAGER_EXIT_HINT));
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
 

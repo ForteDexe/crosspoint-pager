@@ -6,12 +6,12 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/portmacro.h>
 
-// Minimal, opt-in BLE GATT receiver for the dashboard sleep screen. The
+// Minimal, opt-in BLE GATT receiver for the pager sleep screen. The
 // characteristic value is UTF-8 text in the form "title\nmessage\nfooter".
-class HalBleDashboard;
-extern HalBleDashboard bleDashboard;
+class HalBlePager;
+extern HalBlePager blePager;
 
-class HalBleDashboard {
+class HalBlePager {
  public:
   static constexpr size_t MAX_PAYLOAD_BYTES = 320;
 

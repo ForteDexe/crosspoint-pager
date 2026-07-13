@@ -5,7 +5,7 @@ const MAX_PAYLOAD_BYTES = 320;
 const connectButton = document.querySelector("#connect");
 const disconnectButton = document.querySelector("#disconnect");
 const sendButton = document.querySelector("#send");
-const form = document.querySelector("#dashboard-form");
+const form = document.querySelector("#pager-form");
 const connectionStatus = document.querySelector("#connection-status");
 const sendStatus = document.querySelector("#send-status");
 const payloadSize = document.querySelector("#payload-size");
@@ -14,7 +14,7 @@ const encoder = new TextEncoder();
 let device;
 let payloadCharacteristic;
 
-function dashboardPayload() {
+function pagerPayload() {
   return [
     document.querySelector("#title").value,
     document.querySelector("#message").value,
@@ -23,7 +23,7 @@ function dashboardPayload() {
 }
 
 function updatePayloadSize() {
-  const size = encoder.encode(dashboardPayload()).byteLength;
+  const size = encoder.encode(pagerPayload()).byteLength;
   payloadSize.textContent = `${size} / ${MAX_PAYLOAD_BYTES} UTF-8 bytes`;
   sendButton.disabled = !payloadCharacteristic || size === 0 || size > MAX_PAYLOAD_BYTES;
 }
@@ -46,7 +46,7 @@ async function connect() {
   }
 
   try {
-    setConnectionStatus("Choose CrossPoint Dashboard in the browser picker…");
+    setConnectionStatus("Choose CrossPoint Pager in the browser picker…");
     device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
     device.addEventListener("gattserverdisconnected", disconnected, { once: true });
     setConnectionStatus("Connecting…");
@@ -54,7 +54,7 @@ async function connect() {
     const service = await server.getPrimaryService(SERVICE_UUID);
     payloadCharacteristic = await service.getCharacteristic(PAYLOAD_UUID);
     disconnectButton.disabled = false;
-    setConnectionStatus(`Connected to ${device.name || "CrossPoint Dashboard"}`);
+    setConnectionStatus(`Connected to ${device.name || "CrossPoint Pager"}`);
     updatePayloadSize();
   } catch (error) {
     setConnectionStatus(`Connection failed: ${error.message}`);
@@ -64,7 +64,7 @@ async function connect() {
 
 async function sendPayload(event) {
   event.preventDefault();
-  const bytes = encoder.encode(dashboardPayload());
+  const bytes = encoder.encode(pagerPayload());
   if (!payloadCharacteristic || bytes.byteLength === 0 || bytes.byteLength > MAX_PAYLOAD_BYTES) {
     return;
   }
@@ -76,7 +76,7 @@ async function sendPayload(event) {
     } else {
       await payloadCharacteristic.writeValue(bytes);
     }
-    sendStatus.textContent = "Dashboard update sent.";
+    sendStatus.textContent = "Pager update sent.";
   } catch (error) {
     sendStatus.textContent = `Send failed: ${error.message}`;
   }

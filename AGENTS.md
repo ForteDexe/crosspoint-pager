@@ -1,10 +1,10 @@
-# CrossPoint BLE Dashboard Agent Guide
+# CrossPoint BLE Pager Agent Guide
 
 ## Project and scope
 
-This fork starts dashboard work from CrossPoint Reader v1.4.1; the upstream
+This fork starts pager work from CrossPoint Reader v1.4.1; the upstream
 `feat-bluetooth` branch is retained only as a BLE HID reference. It explores
-an opt-in BLE dashboard for Xteink X3/X4. Preserve normal reader behavior and
+an opt-in BLE pager for Xteink X3/X4. Preserve normal reader behavior and
 upstream compatibility. The upstream project scope rejects active connectivity;
 keep this experiment passive, low-power, user-controlled, and isolated from the
 default reader experience. Do not represent it as upstream-ready without an
@@ -48,17 +48,17 @@ control-flow, and review skills when their descriptions match the task.
   ignored build outputs. Edit their source files and regenerate through the
   normal build steps.
 
-## BLE dashboard direction
+## BLE pager direction
 
 - The existing BLE implementation is a HID client for page-turner remotes. A
-  phone-to-dashboard design needs a separate, minimal GATT peripheral service;
+  phone-to-pager design needs a separate, minimal GATT peripheral service;
   do not repurpose HID input as a notification protocol.
 - Normal battery deep sleep turns the MCU off, so it cannot provide timer-based
-  BLE wakeups. Treat periodic dashboard updates as a low-power-standby research
+  BLE wakeups. Treat periodic pager updates as a low-power-standby research
   task and measure current before making battery-life claims.
 - Keep BLE state bounded and opt-in. Do not keep Wi-Fi and BLE active together
   without an explicit RAM, coexistence, and battery budget. Refresh e-ink only
-  when persisted dashboard state changes.
+  when persisted pager state changes.
 
 ## Build and verification
 

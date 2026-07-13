@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CrossPoint BLE Dashboard Test</title>
+    <title>CrossPoint BLE Pager Test</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main>
-      <h1>CrossPoint BLE Dashboard Test</h1>
-      <p class="intro">Connect to a device advertising as <code>CrossPoint Dashboard</code>, then send its three-line dashboard payload.</p>
+      <h1>CrossPoint BLE Pager Test</h1>
+      <p class="intro">Connect to a device advertising as <code>CrossPoint Pager</code>, then send its three-line pager payload.</p>
 
       <section class="connection" aria-label="Bluetooth connection">
         <button id="connect" type="button">Connect Bluetooth</button>
@@ -17,7 +17,7 @@
         <output id="connection-status" role="status">Not connected</output>
       </section>
 
-      <form id="dashboard-form">
+      <form id="pager-form">
         <label>
           Title
           <input id="title" maxlength="80" value="Build complete" />
@@ -28,10 +28,10 @@
         </label>
         <label>
           Footer
-          <input id="footer" maxlength="56" value="CrossPoint BLE dashboard" />
+          <input id="footer" maxlength="56" value="CrossPoint BLE pager" />
         </label>
         <p id="payload-size" class="hint"></p>
-        <button id="send" type="submit" disabled>Send dashboard update</button>
+        <button id="send" type="submit" disabled>Send pager update</button>
       </form>
 
       <output id="send-status" role="status"></output>
