@@ -44,13 +44,25 @@ availability windows are not spent on a status read.
 The app has two Android-side connection modes:
 
 - **Connect per message** scans, connects, sends or reads, then disconnects.
-  This is the default and works with both Always Available and periodic
-  availability.
+  This is the default. After the app has seen X3 report
+  `availability=mailbox`, it keeps only the latest pending update and schedules
+  bounded scans around the expected receive windows instead of scanning
+  continuously.
 - **Keep connected while relay is active** opens and holds the GATT connection
   after **Start notification relay**. Use this only with X3 **Always Available**
   mode when measuring whether X3 consumes less current while advertising idle
   or connected idle. Periodic availability still disconnects from the X3 side
   after the receive window.
+
+## Beat mode for diagnostics
+
+**Start beat mode** runs a bounded periodic BLE status read and appends each
+result to the in-app event log. Use it when validating whether X3 ever exposes
+the Pager service. If X3 is in Always Available mode, the log should show
+regular `Beat: X3 online` entries. If X3 is in periodic availability, the beat
+will report misses between receive windows and online entries when Android
+catches a window. Stop beat mode when you finish debugging; it scans
+periodically and is intentionally not a battery-saving phone mode.
 
 ## Build a debug APK
 
@@ -87,6 +99,14 @@ adb install -r app\build\outputs\apk\debug\crosspoint-pager.apk
    update**. The byte counter must remain at or below 290. Select **Refresh
    pager policy** to read the X3-owned availability, enrollment, and link
    status. If X3 says setup is open, this stores the setup token locally.
+6. To diagnose discovery, select **Start beat mode** and watch the event log
+   for online/missed checks.
+
+For periodic availability, Android can schedule around mailbox windows only
+after it has learned the mailbox interval from X3 status. If schedule is not
+known yet, the first send still performs an immediate bounded scan; once a
+mailbox status read or delivery succeeds while X3 reports `availability=mailbox`,
+later test sends and forwarded notifications use the mailbox queue.
 
 If the phone loses its token or X3 is reset, use **Settings → System → Pager →
 Enrolled Device → Reset** on X3, re-enter Pager standby, then select **Refresh

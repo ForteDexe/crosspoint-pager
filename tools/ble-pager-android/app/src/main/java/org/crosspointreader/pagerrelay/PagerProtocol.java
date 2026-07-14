@@ -63,6 +63,15 @@ final class PagerProtocol {
         return "1".equals(StatusFields.parse(rawStatus).value("enrolled"));
     }
 
+    static PagerStatus parseStatus(String rawStatus) {
+        StatusFields fields = StatusFields.parse(rawStatus);
+        return new PagerStatus("mailbox".equals(fields.value("availability")),
+                "1".equals(fields.value("enrolled")),
+                fields.longValue("interval_s") * 1000L,
+                fields.longValue("window_ms"),
+                fields.longValue("next_window_ms"));
+    }
+
     static int utf8Length(String text) {
         return text.getBytes(StandardCharsets.UTF_8).length;
     }
@@ -157,6 +166,26 @@ final class PagerProtocol {
         return formatted.replaceAll("0+$", "").replaceAll("\\.$", "");
     }
 
+    static final class PagerStatus {
+        final boolean mailbox;
+        final boolean enrolled;
+        final long intervalMs;
+        final long windowMs;
+        final long nextWindowMs;
+
+        PagerStatus(boolean mailbox, boolean enrolled, long intervalMs, long windowMs, long nextWindowMs) {
+            this.mailbox = mailbox;
+            this.enrolled = enrolled;
+            this.intervalMs = intervalMs;
+            this.windowMs = windowMs;
+            this.nextWindowMs = nextWindowMs;
+        }
+
+        boolean canScheduleMailbox() {
+            return mailbox && enrolled && intervalMs > 0L && windowMs > 0L;
+        }
+    }
+
     private static final class StatusFields {
         private final java.util.Map<String, String> values = new java.util.HashMap<>();
 
@@ -189,6 +218,14 @@ final class PagerProtocol {
                 return Integer.parseInt(value(key));
             } catch (NumberFormatException error) {
                 return 0;
+            }
+        }
+
+        long longValue(String key) {
+            try {
+                return Long.parseLong(value(key));
+            } catch (NumberFormatException error) {
+                return 0L;
             }
         }
     }

@@ -32,14 +32,17 @@ import java.util.List;
 
 public final class MainActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 7;
+    private static final int MAX_STATUS_LINES = 40;
 
     private EditText title;
     private EditText message;
     private EditText footer;
     private TextView byteCount;
     private TextView status;
+    private TextView statusLog;
     private Button send;
     private BroadcastReceiver statusReceiver;
+    private final List<String> statusLines = new ArrayList<>();
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -48,7 +51,7 @@ public final class MainActivity extends Activity {
         statusReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                status.setText(intent.getStringExtra(PagerRelayService.EXTRA_STATUS));
+                recordStatus(intent.getStringExtra(PagerRelayService.EXTRA_STATUS));
             }
         };
         requestBluetoothPermissions();
@@ -93,7 +96,7 @@ public final class MainActivity extends Activity {
         TextView connectionHeading = text("Connection mode", 20, true);
         connectionHeading.setPadding(0, dp(16), 0, 0);
         content.addView(connectionHeading);
-        content.addView(text("Use Keep connected only with X3 Always Available mode when measuring advertising idle versus connected idle.", 15, false));
+        content.addView(text("Connect per message queues the latest update for known mailbox windows. Use Keep connected only with X3 Always Available mode when measuring advertising idle versus connected idle.", 15, false));
         content.addView(connectionModePicker());
 
         Button startRelay = button("Start notification relay");
@@ -114,6 +117,20 @@ public final class MainActivity extends Activity {
         Button stopRelay = button("Stop notification relay");
         stopRelay.setOnClickListener(view -> PagerRelayService.stopRelay(this));
         content.addView(stopRelay);
+
+        Button startBeat = button("Start beat mode");
+        startBeat.setOnClickListener(view -> {
+            if (!hasBluetoothPermissions()) {
+                requestBluetoothPermissions();
+                return;
+            }
+            PagerRelayService.startBeat(this);
+        });
+        content.addView(startBeat);
+
+        Button stopBeat = button("Stop beat mode");
+        stopBeat.setOnClickListener(view -> PagerRelayService.stopBeat(this));
+        content.addView(stopBeat);
 
         TextView testHeading = text("Test page", 20, true);
         testHeading.setPadding(0, dp(16), 0, 0);
@@ -141,6 +158,12 @@ public final class MainActivity extends Activity {
         status.setPadding(0, dp(8), 0, 0);
         content.addView(status);
 
+        TextView logHeading = text("Event log", 20, true);
+        logHeading.setPadding(0, dp(16), 0, 0);
+        content.addView(logHeading);
+        statusLog = text("", 13, false);
+        content.addView(statusLog);
+
         TextWatcher watcher = new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { updatePayloadState(); }
@@ -154,6 +177,20 @@ public final class MainActivity extends Activity {
         ScrollView scrollView = new ScrollView(this);
         scrollView.addView(content);
         return scrollView;
+    }
+
+    private void recordStatus(String value) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        status.setText(value);
+        statusLines.add(0, String.format(java.util.Locale.US, "%tT  %s", new java.util.Date(), value));
+        while (statusLines.size() > MAX_STATUS_LINES) {
+            statusLines.remove(statusLines.size() - 1);
+        }
+        if (statusLog != null) {
+            statusLog.setText(String.join("\n\n", statusLines));
+        }
     }
 
     private RadioGroup connectionModePicker() {
