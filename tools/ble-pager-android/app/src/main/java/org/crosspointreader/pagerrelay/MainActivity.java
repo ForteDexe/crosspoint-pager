@@ -12,6 +12,9 @@ import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextUtils;
@@ -25,6 +28,7 @@ import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import java.util.ArrayList;
@@ -43,6 +47,22 @@ public final class MainActivity extends Activity {
     private Button send;
     private BroadcastReceiver statusReceiver;
     private final List<String> statusLines = new ArrayList<>();
+    private final Handler countdownHandler = new Handler(Looper.getMainLooper());
+    private String countdownPrefix;
+    private long countdownAtMs;
+    private final Runnable countdownRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (countdownPrefix == null || countdownAtMs == 0L || status == null) {
+                return;
+            }
+            long remainingMs = Math.max(0L, countdownAtMs - SystemClock.elapsedRealtime());
+            status.setText(getString(R.string.status_countdown, countdownPrefix, countdownText(remainingMs)));
+            if (remainingMs > 0L) {
+                countdownHandler.postDelayed(this, Math.min(1000L, remainingMs));
+            }
+        }
+    };
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -51,7 +71,8 @@ public final class MainActivity extends Activity {
         statusReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                recordStatus(intent.getStringExtra(PagerRelayService.EXTRA_STATUS));
+                recordStatus(intent.getStringExtra(PagerRelayService.EXTRA_STATUS),
+                        intent.getLongExtra(PagerRelayService.EXTRA_COUNTDOWN_AT_MS, 0L));
             }
         };
         requestBluetoothPermissions();
@@ -67,10 +88,14 @@ public final class MainActivity extends Activity {
         } else {
             registerReceiver(statusReceiver, filter);
         }
+        if (countdownAtMs > SystemClock.elapsedRealtime()) {
+            startCountdown(countdownPrefix, countdownAtMs);
+        }
     }
 
     @Override
     protected void onStop() {
+        countdownHandler.removeCallbacks(countdownRunnable);
         unregisterReceiver(statusReceiver);
         super.onStop();
     }
@@ -161,8 +186,19 @@ public final class MainActivity extends Activity {
         TextView logHeading = text("Event log", 20, true);
         logHeading.setPadding(0, dp(16), 0, 0);
         content.addView(logHeading);
+        @SuppressLint("UseSwitchCompatOrMaterialCode")
+        Switch logSwitch = new Switch(this);
+        logSwitch.setText(R.string.enable_event_log);
+        logSwitch.setTextSize(16);
+        logSwitch.setChecked(RelayPreferences.isLogEnabled(this));
+        logSwitch.setOnCheckedChangeListener((view, enabled) -> {
+            RelayPreferences.setLogEnabled(this, enabled);
+            updateLogVisibility();
+        });
+        content.addView(logSwitch);
         statusLog = text("", 13, false);
         content.addView(statusLog);
+        updateLogVisibility();
 
         TextWatcher watcher = new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -179,17 +215,59 @@ public final class MainActivity extends Activity {
         return scrollView;
     }
 
-    private void recordStatus(String value) {
+    private void recordStatus(String value, long targetCountdownAtMs) {
         if (value == null || value.isEmpty()) {
             return;
         }
+        if (targetCountdownAtMs > 0L) {
+            startCountdown(value, targetCountdownAtMs);
+            return;
+        }
+        stopCountdown();
         status.setText(value);
+        if (!RelayPreferences.isLogEnabled(this)) {
+            return;
+        }
         statusLines.add(0, String.format(java.util.Locale.US, "%tT  %s", new java.util.Date(), value));
         while (statusLines.size() > MAX_STATUS_LINES) {
             statusLines.remove(statusLines.size() - 1);
         }
         if (statusLog != null) {
             statusLog.setText(String.join("\n\n", statusLines));
+        }
+    }
+
+    private void startCountdown(String prefix, long targetCountdownAtMs) {
+        countdownHandler.removeCallbacks(countdownRunnable);
+        countdownPrefix = prefix;
+        countdownAtMs = targetCountdownAtMs;
+        countdownHandler.post(countdownRunnable);
+    }
+
+    private void stopCountdown() {
+        countdownHandler.removeCallbacks(countdownRunnable);
+        countdownPrefix = null;
+        countdownAtMs = 0L;
+    }
+
+    private String countdownText(long remainingMs) {
+        if (remainingMs <= 0L) {
+            return "Scanning now.";
+        }
+        long seconds = Math.max(1L, (remainingMs + 999L) / 1000L);
+        if (seconds < 60L) {
+            return "Scanning in " + seconds + " s.";
+        }
+        long minutes = seconds / 60L;
+        long remainderSeconds = seconds % 60L;
+        return remainderSeconds == 0L
+                ? "Scanning in " + minutes + " min."
+                : "Scanning in " + minutes + " min " + remainderSeconds + " s.";
+    }
+
+    private void updateLogVisibility() {
+        if (statusLog != null) {
+            statusLog.setVisibility(RelayPreferences.isLogEnabled(this) ? View.VISIBLE : View.GONE);
         }
     }
 

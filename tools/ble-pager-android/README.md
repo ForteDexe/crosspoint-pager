@@ -47,7 +47,8 @@ The app has two Android-side connection modes:
   This is the default. After the app has seen X3 report
   `availability=mailbox`, it keeps only the latest pending update and schedules
   bounded scans around the expected receive windows instead of scanning
-  continuously.
+  continuously. If a window is missed, the pending update remains queued and
+  the next scan realigns with X3's following mailbox interval.
 - **Keep connected while relay is active** opens and holds the GATT connection
   after **Start notification relay**. Use this only with X3 **Always Available**
   mode when measuring whether X3 consumes less current while advertising idle
@@ -63,6 +64,11 @@ regular `Beat: X3 online` entries. If X3 is in periodic availability, the beat
 will report misses between receive windows and online entries when Android
 catches a window. Stop beat mode when you finish debugging; it scans
 periodically and is intentionally not a battery-saving phone mode.
+
+The **Enable event log** switch controls whether completed operations and
+diagnostic results are retained in the on-screen log. It does not disable the
+current status shown below **Send pager update**. Mailbox wait status counts
+down there once per second without adding every countdown tick to the log.
 
 ## Build a debug APK
 
@@ -100,7 +106,8 @@ adb install -r app\build\outputs\apk\debug\crosspoint-pager.apk
    pager policy** to read the X3-owned availability, enrollment, and link
    status. If X3 says setup is open, this stores the setup token locally.
 6. To diagnose discovery, select **Start beat mode** and watch the event log
-   for online/missed checks.
+   for online/missed checks. Disable **Enable event log** when the history is
+   not needed; the current operation and mailbox countdown remain visible.
 
 For periodic availability, Android can schedule around mailbox windows only
 after it has learned the mailbox interval from X3 status. If schedule is not

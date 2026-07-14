@@ -26,12 +26,11 @@ import java.util.UUID;
 /** One bounded, latest-message-wins GATT delivery pipeline. */
 final class PagerGattClient {
     interface StatusCallback {
-        void onStatus(String status);
+        void onStatus(String status, long countdownAtMs);
     }
 
     private static final long SCAN_TIMEOUT_MS = 12_000;
     private static final long MAILBOX_SCAN_LEAD_MS = 10_000;
-    private static final long MAILBOX_MISSED_WINDOW_RETRY_MS = 30_000;
     private static final long MAILBOX_MAX_PENDING_MS = 75L * 60L * 1000L;
     private static final long BEAT_SCAN_INTERVAL_MS = 30_000;
     private static final long BEAT_BUSY_RETRY_MS = 3_000;
@@ -190,9 +189,11 @@ final class PagerGattClient {
 
     private long mailboxScanDelayMs() {
         long now = SystemClock.elapsedRealtime();
-        if (lastMailboxWindowSeenAtMs > 0L && now - lastMailboxWindowSeenAtMs > mailboxWindowMs
-                && nextMailboxWindowAtMs <= now) {
-            nextMailboxWindowAtMs = lastMailboxWindowSeenAtMs + mailboxIntervalMs;
+        if (nextMailboxWindowAtMs > 0L && mailboxIntervalMs > 0L
+                && now >= nextMailboxWindowAtMs + mailboxWindowMs) {
+            long elapsedAfterWindowMs = now - (nextMailboxWindowAtMs + mailboxWindowMs);
+            long elapsedIntervals = elapsedAfterWindowMs / mailboxIntervalMs + 1L;
+            nextMailboxWindowAtMs += elapsedIntervals * mailboxIntervalMs;
         }
         long scanStartAt = nextMailboxWindowAtMs - MAILBOX_SCAN_LEAD_MS;
         return Math.max(0L, scanStartAt - now);
@@ -204,7 +205,7 @@ final class PagerGattClient {
         }
         cancelMailboxAttempt();
         handler.postDelayed(mailboxAttemptRunnable, delayMs);
-        status(message + " " + mailboxDelayText(delayMs));
+        countdown(message, SystemClock.elapsedRealtime() + delayMs);
     }
 
     private final Runnable mailboxAttemptRunnable = () -> {
@@ -264,9 +265,7 @@ final class PagerGattClient {
             status(reason + " Mailbox delivery expired.");
             return true;
         }
-        nextMailboxWindowAtMs = SystemClock.elapsedRealtime() + mailboxIntervalMs;
-        scheduleMailboxAttempt(Math.min(MAILBOX_MISSED_WINDOW_RETRY_MS, Math.max(0L, mailboxIntervalMs / 2L)),
-                reason + " Keeping latest update queued.");
+        scheduleMailboxAttempt(mailboxScanDelayMs(), reason + " Keeping latest update queued.");
         return true;
     }
 
@@ -630,9 +629,7 @@ final class PagerGattClient {
             currentPayload = null;
             readingStatusForSend = false;
             mailboxAttemptActive = false;
-            nextMailboxWindowAtMs = SystemClock.elapsedRealtime() + mailboxIntervalMs;
-            scheduleMailboxAttempt(Math.min(MAILBOX_MISSED_WINDOW_RETRY_MS, Math.max(0L, mailboxIntervalMs / 2L)),
-                    finalStatus + " Keeping latest update queued.");
+            scheduleMailboxAttempt(mailboxScanDelayMs(), finalStatus + " Keeping latest update queued.");
             return;
         }
         currentOperation = null;
@@ -681,7 +678,11 @@ final class PagerGattClient {
     }
 
     private void status(String value) {
-        statusCallback.onStatus(value);
+        statusCallback.onStatus(value, 0L);
+    }
+
+    private void countdown(String value, long targetAtMs) {
+        statusCallback.onStatus(value, targetAtMs);
     }
 
     private enum Operation {

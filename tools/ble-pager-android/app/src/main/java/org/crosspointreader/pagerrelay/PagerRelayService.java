@@ -19,6 +19,7 @@ public final class PagerRelayService extends Service {
     static final String ACTION_STATUS = "org.crosspointreader.pagerrelay.STATUS";
     static final String EXTRA_PAYLOAD = "payload";
     static final String EXTRA_STATUS = "status";
+    static final String EXTRA_COUNTDOWN_AT_MS = "countdown_at_ms";
     private static final String CHANNEL_ID = "pager_relay";
     private static final int FOREGROUND_NOTIFICATION_ID = 101;
 
@@ -84,7 +85,7 @@ public final class PagerRelayService extends Service {
             if (payload != null && PagerProtocol.isValidTestPayload(payload)) {
                 client.send(payload);
             } else {
-                publishStatus("Pager payload is invalid.");
+                publishStatus("Pager payload is invalid.", 0L);
             }
         } else if (ACTION_READ_STATUS.equals(action)) {
             client.readStatus();
@@ -92,7 +93,7 @@ public final class PagerRelayService extends Service {
             if (shouldKeepConnection()) {
                 client.holdConnection();
             } else {
-                publishStatus("Connection mode: connect per message.");
+                publishStatus("Connection mode: connect per message.", 0L);
             }
         } else if (ACTION_START_BEAT.equals(action)) {
             client.startBeat();
@@ -105,7 +106,8 @@ public final class PagerRelayService extends Service {
             if (shouldKeepConnection()) {
                 client.holdConnection();
             } else {
-                publishStatus(RelayPreferences.isEnabled(this) ? "Pager relay is ready." : "Pager test sender is ready.");
+                publishStatus(RelayPreferences.isEnabled(this) ? "Pager relay is ready." : "Pager test sender is ready.",
+                        0L);
             }
         }
         return RelayPreferences.isEnabled(this) || RelayPreferences.isBeatEnabled(this) ? START_STICKY : START_NOT_STICKY;
@@ -137,8 +139,11 @@ public final class PagerRelayService extends Service {
         getSystemService(NotificationManager.class).createNotificationChannel(channel);
     }
 
-    private void publishStatus(String status) {
-        sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()).putExtra(EXTRA_STATUS, status));
+    private void publishStatus(String status, long countdownAtMs) {
+        sendBroadcast(new Intent(ACTION_STATUS)
+                .setPackage(getPackageName())
+                .putExtra(EXTRA_STATUS, status)
+                .putExtra(EXTRA_COUNTDOWN_AT_MS, countdownAtMs));
     }
 
     private void configureConnectionMode() {
