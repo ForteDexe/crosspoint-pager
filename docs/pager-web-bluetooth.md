@@ -30,9 +30,11 @@ $env:PYTHONIOENCODING = 'utf-8'
 ```
 
 The first build downloads the ESP32 platform and toolchain. On success, the
-flashable file is `.pio\build\pager_power\firmware.bin`. The experimental
-`pager_power` environment enables BLE modem sleep and automatic light sleep;
-use `-e default` only when you specifically want the normal reader build.
+flashable file is `.pio\build\pager_power\firmware.bin`. The `pager_power`
+environment enables BLE modem sleep and automatic light sleep and disables
+serial logging for battery tests. For serial diagnosis, build
+`pager_power_debug`; use `-e default` only when you specifically want the normal
+reader build.
 
 ## Flash the firmware
 
@@ -49,9 +51,11 @@ and select `.pio\build\pager_power\firmware.bin`.
 ## Before starting
 
 1. Flash the firmware with one of the methods above.
-2. In **Settings → System → Pager**, choose **Normal** for continuously
-   available PC debugging, or **Mailbox** and its 1, 5, 15, 30, or 60 minute
-   interval for timer-based delivery. The default Mailbox interval is 5 minutes.
+2. In **Settings → System → Pager → Availability**, choose **Always Available**
+   for continuously available PC debugging, or **Every 1/5/15/30/60 min** for
+   timer-based delivery. The default periodic interval is 5 minutes. The
+   separate **Normal Power Profile** chooses Responsive, Balanced, or Battery
+   Saver link preferences when Availability is Always Available.
 3. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
    Pager**, then put the device into sleep/Pager standby.
 
@@ -77,19 +81,31 @@ secure context such as `localhost` or HTTPS.
 
 1. Select **Connect Bluetooth** in the browser page.
 2. In the browser's device chooser, select **CrossPoint Pager**.
-3. Enter a title, message, and footer, then select **Send pager update**.
+3. Check **X3 Pager policy** to see the device's Availability, Normal power
+   profile, and latest negotiated BLE link timing. Select **Refresh** after the
+   connection settles if you want to reread it.
+4. Enter a title, message, and footer, then select **Send pager update**.
 
 The browser writes a compact UTF-8 GATT payload to the device. Pager refreshes
 the e-ink screen only when that payload changes. It uses fast e-ink refreshes
 for message updates and performs its cleanup refresh according to **Settings >
 Display > Refresh Frequency**.
 
-**Normal** Pager mode is the X3-controlled always-available debugging policy:
-the browser connection stays open until the browser or user disconnects.
-**Mailbox** mode is also X3-controlled: it fully deinitializes BLE between
-windows, advertises for five seconds, and closes a delivered or idle connection
-within one or five seconds respectively. The browser cannot retry in the
-background, so use Normal for interactive PC testing.
+**Always Available** is the X3-controlled continuous policy: the browser
+connection stays open until the browser or user disconnects. Its Normal Power
+Profile asks the central for a link interval and latency; the browser does not
+schedule this itself, and the central may adjust X3's request. **Periodic
+availability** is also X3-controlled: it fully deinitializes BLE between
+windows, advertises for two seconds, and closes a delivered or idle connection
+after 250 ms or three seconds respectively. To save scan-response traffic, a
+periodic window may appear without the `CrossPoint Pager` name in a chooser; it
+is still selected by the service UUID. The browser cannot retry in the
+background, so use Always Available for interactive PC testing.
+
+The test page reads policy and effective link status from X3. It intentionally
+cannot write those settings: the current GATT service is not authenticated, so
+remote power-policy writes would allow any nearby client to increase battery
+use.
 
 ## If the browser cannot find Pager
 

@@ -18,6 +18,20 @@
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
 
+namespace {
+HalBlePager::NormalPowerProfile pagerNormalPowerProfile() {
+  switch (SETTINGS.pagerNormalPowerProfile) {
+    case CrossPointSettings::PAGER_PROFILE_RESPONSIVE:
+      return HalBlePager::NormalPowerProfile::Responsive;
+    case CrossPointSettings::PAGER_PROFILE_BATTERY_SAVER:
+      return HalBlePager::NormalPowerProfile::BatterySaver;
+    case CrossPointSettings::PAGER_PROFILE_BALANCED:
+    default:
+      return HalBlePager::NormalPowerProfile::Balanced;
+  }
+}
+}  // namespace
+
 void SleepActivity::onEnter() {
   Activity::onEnter();
 
@@ -37,10 +51,9 @@ void SleepActivity::onEnter() {
     if (pagerLowBatteryDetected) {
       return;
     }
-    char payload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
-    const size_t payloadLength = blePager.takePayload(payload, sizeof(payload));
+    const size_t payloadLength = blePager.takePayload(pagerPayload, sizeof(pagerPayload));
     if (payloadLength > 0) {
-      updatePagerText(payload, payloadLength);
+      updatePagerText(pagerPayload, payloadLength);
     }
     pagerMailboxMode = SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_MAILBOX;
     if (pagerMailboxMode && !powerManager.canUsePagerMailboxLightSleep()) {
@@ -52,7 +65,7 @@ void SleepActivity::onEnter() {
     // alive while Pager otherwise sleeps.
     const auto connectionMode =
         pagerMailboxMode ? HalBlePager::ConnectionMode::Mailbox : HalBlePager::ConnectionMode::Normal;
-    if (blePager.begin(connectionMode, SETTINGS.pagerMailboxIntervalMinutes)) {
+    if (blePager.begin(connectionMode, SETTINGS.pagerMailboxIntervalMinutes, pagerNormalPowerProfile())) {
       powerManager.enablePagerLightSleep();
     } else {
       LOG_ERR("PAGER", "Bluetooth unavailable; Pager will stay awake");
@@ -137,8 +150,7 @@ void SleepActivity::loop() {
     return;
   }
 
-  char payload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
-  const size_t payloadLength = blePager.takePayload(payload, sizeof(payload));
+  const size_t payloadLength = blePager.takePayload(pagerPayload, sizeof(pagerPayload));
   if (payloadLength > 0) {
     // The screen will render below, so refresh the header's battery reading at
     // the same time without scheduling a battery-only e-ink update.
@@ -146,7 +158,7 @@ void SleepActivity::loop() {
     if (pagerLowBatteryDetected) {
       return;
     }
-    updatePagerText(payload, payloadLength);
+    updatePagerText(pagerPayload, payloadLength);
     pagerRefreshMode = nextPagerRefreshMode();
     requestUpdate();
   }
@@ -167,12 +179,21 @@ void SleepActivity::runPagerMailboxSleep() {
     return;
   }
 
-  const unsigned long batteryPollMs = pagerBatteryPercent <= PAGER_LOW_BATTERY_POLL_START_PERCENT
-                                          ? HalPowerManager::BATTERY_POLL_MS
-                                          : untilNextWindowMs;
-  const auto wake = powerManager.sleepForPagerMailbox(std::min(untilNextWindowMs, batteryPollMs));
-  if (wake == HalPowerManager::PagerMailboxWake::Timer) {
+  const unsigned long batteryIntervalMs = pagerBatteryPercent <= PAGER_LOW_BATTERY_POLL_START_PERCENT
+                                              ? PAGER_LOW_BATTERY_PROBE_MS
+                                              : PAGER_HEALTHY_BATTERY_PROBE_MS;
+  const unsigned long elapsedSinceBatteryCheckMs = millis() - lastPagerBatteryCheckMs;
+  if (elapsedSinceBatteryCheckMs >= batteryIntervalMs) {
     checkPagerBatteryLevel(true);
+    if (pagerLowBatteryDetected) {
+      return;
+    }
+  }
+
+  const unsigned long untilBatteryCheckMs = batteryIntervalMs - (millis() - lastPagerBatteryCheckMs);
+  const auto wake = powerManager.sleepForPagerMailbox(std::min(untilNextWindowMs, untilBatteryCheckMs));
+  if (wake == HalPowerManager::PagerMailboxWake::Timer) {
+    checkPagerBatteryLevel();
   }
 }
 
@@ -189,7 +210,7 @@ bool SleepActivity::shouldEnterDeepSleep() { return pagerLowBatteryDetected; }
 void SleepActivity::checkPagerBatteryLevel(const bool force) {
   const unsigned long now = millis();
   const unsigned long interval = pagerBatteryPercent <= PAGER_LOW_BATTERY_POLL_START_PERCENT
-                                     ? HalPowerManager::BATTERY_POLL_MS
+                                     ? PAGER_LOW_BATTERY_PROBE_MS
                                      : PAGER_HEALTHY_BATTERY_PROBE_MS;
   if (!force && lastPagerBatteryCheckMs != 0 && now - lastPagerBatteryCheckMs < interval) {
     return;
@@ -274,7 +295,10 @@ void SleepActivity::renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) 
                               EpdFontFamily::BOLD);
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
   }
-  renderer.displayBuffer(refreshMode);
+  // E-ink retains the image without power. Match the reader's deep-sleep
+  // cleanup by shutting down the controller analog rails after every Pager
+  // paint; the next update powers it back up while preserving fast refresh.
+  renderer.displayBufferAndPowerOff(refreshMode);
 }
 
 void SleepActivity::renderCustomSleepScreen() const {

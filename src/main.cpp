@@ -509,15 +509,19 @@ void setup() {
 }
 
 void loop() {
+#ifdef ENABLE_SERIAL_LOG
   static unsigned long maxLoopDuration = 0;
   const unsigned long loopStartTime = millis();
   static unsigned long lastMemPrint = 0;
+#endif
 
-  gpio.update();
+  const bool pagerStandby = activityManager.handlesPowerButtonSleepGesture();
+  gpio.update(!pagerStandby);
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
 
   renderer.setFadingFix(SETTINGS.fadingFix);
 
+#ifdef ENABLE_SERIAL_LOG
   if (Serial && millis() - lastMemPrint >= 10000) {
     LOG_INF("MEM", "Free: %d bytes, Total: %d bytes, Min Free: %d bytes, MaxAlloc: %d bytes", ESP.getFreeHeap(),
             ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
@@ -540,6 +544,7 @@ void loop() {
       }
     }
   }
+#endif
 
   // Check for any user activity (button press or release) or active background work
   static unsigned long lastActivityTime = millis();
@@ -613,15 +618,20 @@ void loop() {
     activityManager.requestUpdate();
   }
 
+#ifdef ENABLE_SERIAL_LOG
   const unsigned long activityStartTime = millis();
+#endif
   activityManager.loop();
+#ifdef ENABLE_SERIAL_LOG
   const unsigned long activityDuration = millis() - activityStartTime;
+#endif
 
   if (activityManager.shouldEnterDeepSleep()) {
     enterDeepSleep(false, true);
     return;
   }
 
+#ifdef ENABLE_SERIAL_LOG
   const unsigned long loopDuration = millis() - loopStartTime;
   if (loopDuration > maxLoopDuration) {
     maxLoopDuration = loopDuration;
@@ -629,6 +639,7 @@ void loop() {
       LOG_DBG("LOOP", "New max loop duration: %lu ms (activity: %lu ms)", maxLoopDuration, activityDuration);
     }
   }
+#endif
 
   // Add delay at the end of the loop to prevent tight spinning
   // When an activity requests skip loop delay (e.g., webserver running), use yield() for faster response
@@ -640,7 +651,13 @@ void loop() {
     // ESP32-C3's BLE controller is not reliable at the 10 MHz idle clock.
     // Keep normal frequency whenever the opt-in pager service owns the radio;
     // BLE is otherwise completely stopped outside pairing/pager.
-    if (!blePager.isRadioRunning() && millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
+    if (pagerStandby) {
+      // BLE callbacks run independently; the activity state machine only
+      // needs human-scale button and timeout response. Match the reader's
+      // 50 ms idle cadence so tickless idle gets longer sleep opportunities.
+      powerManager.setPowerSaving(false);
+      delay(50);
+    } else if (!blePager.isRadioRunning() && millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
       delay(50);

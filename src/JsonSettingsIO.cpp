@@ -160,6 +160,7 @@ bool JsonSettingsIO::saveSettings(const CrossPointSettings& s, const char* path)
   // Pager is configured only on-device through Settings > System > Pager.
   doc["pagerConnectionMode"] = s.pagerConnectionMode;
   doc["pagerMailboxIntervalMinutes"] = s.pagerMailboxIntervalMinutes;
+  doc["pagerNormalPowerProfile"] = s.pagerNormalPowerProfile;
 
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
@@ -277,6 +278,10 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
                                  CrossPointSettings::PAGER_NORMAL);
   const uint8_t mailboxInterval = doc["pagerMailboxIntervalMinutes"] | (uint8_t)5;
   s.pagerMailboxIntervalMinutes = mailboxInterval >= 1 && mailboxInterval <= 60 ? mailboxInterval : 5;
+  s.pagerNormalPowerProfile =
+      clamp(doc["pagerNormalPowerProfile"] | (uint8_t)CrossPointSettings::PAGER_PROFILE_BALANCED,
+            CrossPointSettings::PAGER_NORMAL_POWER_PROFILE_COUNT,
+            CrossPointSettings::PAGER_PROFILE_BALANCED);
 
   LOG_DBG("CPS", "Settings loaded from file");
 

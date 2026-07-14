@@ -202,8 +202,12 @@ void HalGPIO::begin() {
   }
 }
 
-void HalGPIO::update() {
+void HalGPIO::update(const bool pollUsbState) {
   inputMgr.update();
+  if (!pollUsbState) {
+    usbStateChanged = false;
+    return;
+  }
   const bool connected = isUsbConnected();
   usbStateChanged = (connected != lastUsbConnected);
   lastUsbConnected = connected;

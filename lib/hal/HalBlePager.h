@@ -14,13 +14,20 @@ extern HalBlePager blePager;
 class HalBlePager {
  public:
   static constexpr size_t MAX_PAYLOAD_BYTES = 320;
+  static constexpr size_t MAX_STATUS_BYTES = 224;
 
   enum class ConnectionMode : uint8_t {
     Normal,
     Mailbox,
   };
 
-  bool begin(ConnectionMode connectionMode, uint8_t mailboxIntervalMinutes);
+  enum class NormalPowerProfile : uint8_t {
+    Responsive,
+    Balanced,
+    BatterySaver,
+  };
+
+  bool begin(ConnectionMode connectionMode, uint8_t mailboxIntervalMinutes, NormalPowerProfile normalPowerProfile);
   void end();
 
   // Advances the bounded connection/window state machine from the activity
@@ -40,9 +47,15 @@ class HalBlePager {
   // small. The result is always NUL-terminated when non-zero.
   size_t takePayload(char* destination, size_t destinationSize);
 
+  // Produces a read-only, semicolon-delimited policy/status value for the
+  // companion app. X3 remains the configuration authority.
+  size_t copyStatus(char* destination, size_t destinationSize) const;
+
   // These are called only by the NimBLE callbacks. They keep callback work
   // bounded and leave all rendering to the activity loop.
-  void setConnected(bool connected, uint16_t connectionHandle = 0);
+  void setConnected(bool connected, uint16_t connectionHandle = 0, uint16_t intervalUnits = 0,
+                    uint16_t latency = 0, uint16_t supervisionTimeoutUnits = 0);
+  void setConnectionParameters(uint16_t intervalUnits, uint16_t latency, uint16_t supervisionTimeoutUnits);
   void storePayload(const uint8_t* data, size_t length);
 
  private:
@@ -61,8 +74,12 @@ class HalBlePager {
   bool running = false;
   bool radioRunning = false;
   bool mailboxMode = false;
+  NormalPowerProfile normalPowerProfile = NormalPowerProfile::Balanced;
   bool connected = false;
   uint16_t connectionHandle = 0;
+  uint16_t connectionIntervalUnits = 0;
+  uint16_t connectionLatency = 0;
+  uint16_t supervisionTimeoutUnits = 0;
   unsigned long mailboxIntervalMs = 0;
   RadioState radioState = RadioState::Normal;
   unsigned long receiveWindowStartedAt = 0;
@@ -71,4 +88,5 @@ class HalBlePager {
   unsigned long disconnectAfterAt = 0;
   bool disconnectRequested = false;
   bool advertisingRestartRequested = false;
+  bool connectionParamsUpdateRequested = false;
 };

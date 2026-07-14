@@ -1,4 +1,5 @@
 #pragma once
+#include <HalBlePager.h>
 #include <HalDisplay.h>
 
 #include "activities/Activity.h"
@@ -58,6 +59,10 @@ class SleepActivity final : public Activity {
   // at or below it, poll promptly so the 25% deep-sleep safeguard is timely.
   static constexpr uint16_t PAGER_LOW_BATTERY_POLL_START_PERCENT = 40;
   static constexpr unsigned long PAGER_HEALTHY_BATTERY_PROBE_MS = 15UL * 60UL * 1000UL;
+  static constexpr unsigned long PAGER_LOW_BATTERY_PROBE_MS = 5UL * 60UL * 1000UL;
+  // Reused for every transfer so the 321-byte GATT payload never sits in a
+  // hot-path stack frame.
+  char pagerPayload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
   char pagerTitle[PAGER_TITLE_BYTES] = {};
   char pagerMessage[PAGER_MESSAGE_BYTES] = {};
   char pagerFooter[PAGER_FOOTER_BYTES] = {};

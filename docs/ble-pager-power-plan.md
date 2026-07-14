@@ -52,7 +52,9 @@ The experimental `pager_power` PlatformIO environment is the test vehicle for
 this phase. It rebuilds the ESP32-C3 Arduino/ESP-IDF libraries with
 Espressif's documented modem-sleep and automatic-light-sleep settings, using
 the main 40 MHz crystal as the BLE low-power clock. It does not assume that
-the X3 has an external 32 kHz crystal connected to the ESP32-C3.
+the X3 has an external 32 kHz crystal connected to the ESP32-C3. It also builds
+NimBLE for one peripheral connection only, without the unused central/observer
+roles.
 
 Build it with:
 
@@ -67,6 +69,13 @@ normal build. Its image is `.pio/build/pager_power/firmware.bin`. Validate
 advertising, browser connection, a changed-message update, and battery-side
 current before replacing the default build.
 
+`pager_power` disables serial logging for production battery tests. When logs
+are required, build `pager_power_debug` instead:
+
+```powershell
+.\.conda\Scripts\pio.exe run -e pager_power_debug
+```
+
 USB serial is not a valid current measurement method for this phase: opening
 the X3 USB CDC port resets the device, and USB charging makes the fuel-gauge
 current different from the device's battery draw. Measure on battery power
@@ -78,21 +87,53 @@ Do not claim multi-month battery life from this phase until it is measured.
 
 Mailbox mode is now an experimental `pager_power` path. X3 deinitializes
 NimBLE, enters timer light sleep, then recreates the Pager GATT service for a
-five-second receive window. Its GPIO13 battery latch is explicitly held high,
+two-second receive window. Its GPIO13 battery latch is explicitly held high,
 so this is light sleep rather than the X3's normal latch-cutting deep sleep.
 
-The cadence is selected on X3 under **Settings → System → Pager**: 1, 5, 15,
-30, or 60 minutes (default 5). A sender must retain the latest notification
+The cadence is selected on X3 under **Settings → System → Pager →
+Availability**: Always Available or every 1, 5, 15, 30, or 60 minutes (default
+5). A sender must retain the latest notification
 until an advertising window is found. A valid payload write receives its normal
-GATT response, then X3 disconnects one second later; idle connections close at
-five seconds.
+GATT response, then X3 disconnects 250 ms later; idle connections close at
+three seconds. Mailbox advertises every 100 ms at -6 dBm and omits the optional
+scan-response name. Always Available retains the readable name and continuous
+radio for development.
+
+For Always Available, **Normal Power Profile** makes X3 request one of three
+BLE link policies: Responsive (30–50 ms, latency 0, 4 s timeout), Balanced
+(100–150 ms, latency 2, 6 s timeout), or Battery Saver (200–300 ms, latency 4,
+10 s timeout). The central remains responsible for the negotiated result. X3's
+read-only status characteristic lets a test client inspect both the persisted
+delivery policy and the latest link values without granting unauthenticated
+remote control over battery behavior.
+
+The powered-on work outside BLE was also reduced after comparing Pager with the
+reader path:
+
+- Pager scans the power button at a 50 ms cadence but skips the normal X3 USB
+  state check, which otherwise reads the BQ27220 fuel gauge over I2C every loop.
+- The QMI8658 tilt sensor is put to sleep outside the reader.
+- The e-ink controller is explicitly powered off after every Pager paint; the
+  panel keeps its image without power.
+- The GATT receive buffer is owned by `SleepActivity` and reused rather than
+  placed on the loop stack.
+- Gauge reads remain only for the safety policy: every 15 minutes above 40%,
+  every 5 minutes at or below 40%, and when a message is already redrawing the
+  battery header. No battery-only display refresh is scheduled.
+
+Some plausible changes are deliberately not included. The reader's manual
+10 MHz idle clock breaks BLE reliability. Reusing a NimBLE server across full
+host deinitialization is unsafe with the current library lifecycle. True X3
+partial-window updates require support in the display SDK, and neither an SD
+power switch nor an ESP-connected external 32 kHz clock is verified on this
+hardware. Treat those as measurement-led hardware/SDK work, not assumptions.
 
 Validate before treating this as a battery solution:
 
 - Power-button wake/exit while X3 is in the timer-light-sleep interval.
 - BLE discovery and message delivery in repeated windows.
 - Recovery after an interrupted or idle browser connection.
-- Current during radio-off interval, five-second window, and e-ink update.
+- Current during radio-off interval, two-second window, and e-ink update.
 - Sender queue/retry behavior and expected notification delay for the Android app.
 
 ## Non-goal

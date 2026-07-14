@@ -181,6 +181,13 @@ class CrossPointSettings {
     PAGER_CONNECTION_MODE_COUNT
   };
 
+  enum PAGER_NORMAL_POWER_PROFILE {
+    PAGER_PROFILE_RESPONSIVE = 0,
+    PAGER_PROFILE_BALANCED = 1,
+    PAGER_PROFILE_BATTERY_SAVER = 2,
+    PAGER_NORMAL_POWER_PROFILE_COUNT
+  };
+
   // Sleep screen settings
   uint8_t sleepScreen = DARK;
   // Sleep screen cover mode settings
@@ -279,6 +286,7 @@ class CrossPointSettings {
   // debugging; Mailbox uses short receive windows separated by timer light sleep.
   uint8_t pagerConnectionMode = PAGER_NORMAL;
   uint8_t pagerMailboxIntervalMinutes = 5;
+  uint8_t pagerNormalPowerProfile = PAGER_PROFILE_BALANCED;
 
   ~CrossPointSettings() = default;
 

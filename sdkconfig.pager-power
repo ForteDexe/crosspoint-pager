@@ -14,6 +14,16 @@ CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL=y
 CONFIG_BT_CTRL_SLEEP_MODE_EFF=1
 CONFIG_BT_CTRL_SLEEP_CLOCK_EFF=1
 CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y
+
+# Pager is one GATT peripheral/advertiser. Remove unused central/observer
+# roles and extra connection slots so each short Mailbox window starts with
+# less controller/host state. The matching NimBLE-Arduino role-disable flags
+# live in platformio.ini because that library has a separate config layer.
+# CONFIG_BT_NIMBLE_ROLE_CENTRAL is not set
+# CONFIG_BT_NIMBLE_ROLE_OBSERVER is not set
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
 # Do not power-cycle Bluetooth MAC/baseband between Pager advertising events.
 # This is the most aggressive radio-saving option; leave it off while
 # validating reliable automatic light sleep on Xteink X3.

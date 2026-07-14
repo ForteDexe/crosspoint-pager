@@ -12,8 +12,8 @@
 
 namespace {
 enum class MenuItem : uint8_t {
-  ConnectionMode,
-  MailboxInterval,
+  Availability,
+  NormalPowerProfile,
   Count,
 };
 
@@ -21,12 +21,13 @@ constexpr int MENU_ITEM_COUNT = static_cast<int>(MenuItem::Count);
 constexpr uint8_t MAILBOX_INTERVAL_MINUTES[] = {1, 5, 15, 30, 60};
 constexpr size_t MAILBOX_INTERVAL_COUNT = sizeof(MAILBOX_INTERVAL_MINUTES) / sizeof(MAILBOX_INTERVAL_MINUTES[0]);
 constexpr StrId MENU_NAMES[MENU_ITEM_COUNT] = {
-    StrId::STR_PAGER_CONNECTION_MODE,
-    StrId::STR_PAGER_MAILBOX_INTERVAL,
+    StrId::STR_PAGER_AVAILABILITY,
+    StrId::STR_PAGER_NORMAL_POWER_PROFILE,
 };
-constexpr StrId CONNECTION_MODE_NAMES[] = {
-    StrId::STR_PAGER_NORMAL,
-    StrId::STR_PAGER_MAILBOX,
+constexpr StrId NORMAL_POWER_PROFILE_NAMES[] = {
+    StrId::STR_PAGER_PROFILE_RESPONSIVE,
+    StrId::STR_PAGER_PROFILE_BALANCED,
+    StrId::STR_PAGER_PROFILE_BATTERY_SAVER,
 };
 
 bool isMailboxInterval(const uint8_t minutes) {
@@ -38,13 +39,26 @@ bool isMailboxInterval(const uint8_t minutes) {
   return false;
 }
 
-uint8_t nextMailboxInterval(const uint8_t current) {
-  for (size_t index = 0; index < MAILBOX_INTERVAL_COUNT; index++) {
-    if (MAILBOX_INTERVAL_MINUTES[index] == current) {
-      return MAILBOX_INTERVAL_MINUTES[(index + 1) % MAILBOX_INTERVAL_COUNT];
-    }
+void selectNextAvailability() {
+  if (SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_NORMAL) {
+    SETTINGS.pagerConnectionMode = CrossPointSettings::PAGER_MAILBOX;
+    SETTINGS.pagerMailboxIntervalMinutes = MAILBOX_INTERVAL_MINUTES[0];
+    return;
   }
-  return MAILBOX_INTERVAL_MINUTES[0];
+
+  for (size_t index = 0; index < MAILBOX_INTERVAL_COUNT; index++) {
+    if (MAILBOX_INTERVAL_MINUTES[index] != SETTINGS.pagerMailboxIntervalMinutes) {
+      continue;
+    }
+    if (index + 1 < MAILBOX_INTERVAL_COUNT) {
+      SETTINGS.pagerMailboxIntervalMinutes = MAILBOX_INTERVAL_MINUTES[index + 1];
+    } else {
+      SETTINGS.pagerConnectionMode = CrossPointSettings::PAGER_NORMAL;
+    }
+    return;
+  }
+
+  SETTINGS.pagerMailboxIntervalMinutes = MAILBOX_INTERVAL_MINUTES[0];
 }
 }  // namespace
 
@@ -56,6 +70,9 @@ void PagerSettingsActivity::onEnter() {
   }
   if (!isMailboxInterval(SETTINGS.pagerMailboxIntervalMinutes)) {
     SETTINGS.pagerMailboxIntervalMinutes = 5;
+  }
+  if (SETTINGS.pagerNormalPowerProfile >= CrossPointSettings::PAGER_NORMAL_POWER_PROFILE_COUNT) {
+    SETTINGS.pagerNormalPowerProfile = CrossPointSettings::PAGER_PROFILE_BALANCED;
   }
   selectedIndex = 0;
   requestUpdate();
@@ -93,12 +110,12 @@ void PagerSettingsActivity::loop() {
 
 void PagerSettingsActivity::handleSelection() {
   switch (static_cast<MenuItem>(selectedIndex)) {
-    case MenuItem::ConnectionMode:
-      SETTINGS.pagerConnectionMode =
-          (SETTINGS.pagerConnectionMode + 1) % CrossPointSettings::PAGER_CONNECTION_MODE_COUNT;
+    case MenuItem::Availability:
+      selectNextAvailability();
       break;
-    case MenuItem::MailboxInterval:
-      SETTINGS.pagerMailboxIntervalMinutes = nextMailboxInterval(SETTINGS.pagerMailboxIntervalMinutes);
+    case MenuItem::NormalPowerProfile:
+      SETTINGS.pagerNormalPowerProfile =
+          (SETTINGS.pagerNormalPowerProfile + 1) % CrossPointSettings::PAGER_NORMAL_POWER_PROFILE_COUNT;
       break;
     case MenuItem::Count:
       return;
@@ -121,14 +138,17 @@ void PagerSettingsActivity::render(RenderLock&&) {
       [](const int index) { return std::string(I18N.get(MENU_NAMES[index])); }, nullptr, nullptr,
       [](const int index) -> std::string {
         switch (static_cast<MenuItem>(index)) {
-          case MenuItem::ConnectionMode:
-            return I18N.get(CONNECTION_MODE_NAMES[SETTINGS.pagerConnectionMode]);
-          case MenuItem::MailboxInterval: {
+          case MenuItem::Availability: {
+            if (SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_NORMAL) {
+              return I18N.get(StrId::STR_PAGER_ALWAYS_AVAILABLE);
+            }
             char value[16] = {};
-            snprintf(value, sizeof(value), tr(STR_SLEEP_TIMER_VALUE_FORMAT),
+            snprintf(value, sizeof(value), tr(STR_PAGER_EVERY_MINUTES_FORMAT),
                      static_cast<unsigned int>(SETTINGS.pagerMailboxIntervalMinutes));
             return value;
           }
+          case MenuItem::NormalPowerProfile:
+            return I18N.get(NORMAL_POWER_PROFILE_NAMES[SETTINGS.pagerNormalPowerProfile]);
           case MenuItem::Count:
             return "";
         }

@@ -62,8 +62,9 @@ class HalGPIO {
   // Start button GPIO and setup SPI for screen and SD card
   void begin();
 
-  // Button input methods
-  void update();
+  // Button input methods. Pager can skip the X3 fuel-gauge based USB probe
+  // while still scanning its power button.
+  void update(bool pollUsbState = true);
   bool isPressed(uint8_t buttonIndex) const;
   bool wasPressed(uint8_t buttonIndex) const;
   bool wasAnyPressed() const;
