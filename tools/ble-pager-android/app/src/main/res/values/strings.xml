@@ -6,6 +6,27 @@
     <string name="relay_notification_text">New notifications will be sent to CrossPoint Pager.</string>
     <string name="notification_access_required">Allow notification access for CrossPoint Pager first.</string>
     <string name="payload_byte_count">%1$d / %2$d UTF-8 bytes</string>
-    <string name="enable_event_log">Enable event log</string>
+    <string name="notification_relay">Notification relay</string>
+    <string name="beat_mode">Beat mode</string>
+    <string name="debug_collapsed">Debug ▸</string>
+    <string name="debug_expanded">Debug ▾</string>
+    <string name="clear_log">Clear log</string>
+    <string name="learned_mailbox_timing_unavailable">Not learned yet. Pending updates retry every 30 seconds until Xteink is reached.</string>
+    <string name="learned_mailbox_timing_summary">Interval: %1$s\nReceive window: %2$s\nNext estimated window: %3$s</string>
+    <string name="duration_milliseconds">%1$d ms</string>
+    <string name="send_pager_update">Send pager update</string>
+    <string name="stop_pager_update_retry">Stop pager update retry</string>
+    <string name="refresh_pager_policy">Refresh pager policy</string>
+    <string name="stop_policy_retry">Stop policy retry</string>
+    <string name="test_mode_connect_per_message">Test send mode: Connect per message. The app disconnects after delivery.</string>
+    <string name="test_mode_keep_connected">Test send mode: Keep connected while relay is active. A test send simulates this mode by leaving the BLE link open after delivery; select Connect per message to disconnect it.</string>
+    <plurals name="duration_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <plurals name="duration_seconds">
+        <item quantity="one">%1$d second</item>
+        <item quantity="other">%1$d seconds</item>
+    </plurals>
     <string name="status_countdown">%1$s %2$s</string>
 </resources>
