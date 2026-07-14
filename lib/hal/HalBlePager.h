@@ -7,14 +7,17 @@
 #include <freertos/portmacro.h>
 
 // Minimal, opt-in BLE GATT receiver for the pager sleep screen. The
-// characteristic value is UTF-8 text in the form "title\nmessage\nfooter".
+// characteristic value is an authenticated UTF-8 pager packet:
+// "XPAGER1\nDATA\n<16-hex-token>\n<title>\nmessage\nfooter".
 class HalBlePager;
 extern HalBlePager blePager;
 
 class HalBlePager {
  public:
   static constexpr size_t MAX_PAYLOAD_BYTES = 320;
-  static constexpr size_t MAX_STATUS_BYTES = 224;
+  static constexpr size_t MAX_STATUS_BYTES = 320;
+  static constexpr size_t CLIENT_TOKEN_BYTES = 16;
+  static constexpr size_t AUTH_PAYLOAD_OVERHEAD_BYTES = 30;
 
   enum class ConnectionMode : uint8_t {
     Normal,
@@ -27,7 +30,16 @@ class HalBlePager {
     BatterySaver,
   };
 
-  bool begin(ConnectionMode connectionMode, uint8_t mailboxIntervalMinutes, NormalPowerProfile normalPowerProfile);
+  enum class WriteStatus : uint8_t {
+    None,
+    Accepted,
+    Enrolled,
+    AuthFailed,
+    Invalid,
+  };
+
+  bool begin(ConnectionMode connectionMode, uint8_t mailboxIntervalMinutes, NormalPowerProfile normalPowerProfile,
+             bool clientEnrolled, const char* clientToken);
   void end();
 
   // Advances the bounded connection/window state machine from the activity
@@ -51,6 +63,10 @@ class HalBlePager {
   // companion app. X3 remains the configuration authority.
   size_t copyStatus(char* destination, size_t destinationSize) const;
 
+  // Consumes the token that completed first-time enrollment. The activity owns
+  // persistent settings and saves it outside the BLE callback path.
+  size_t takeEnrollmentToken(char* destination, size_t destinationSize);
+
   // These are called only by the NimBLE callbacks. They keep callback work
   // bounded and leave all rendering to the activity loop.
   void setConnected(bool connected, uint16_t connectionHandle = 0, uint16_t intervalUnits = 0,
@@ -71,6 +87,11 @@ class HalBlePager {
   char payload[MAX_PAYLOAD_BYTES + 1] = {};
   size_t payloadLength = 0;
   bool payloadPending = false;
+  bool clientEnrolled = false;
+  char clientToken[CLIENT_TOKEN_BYTES + 1] = {};
+  bool enrollmentPending = false;
+  char pendingEnrollmentToken[CLIENT_TOKEN_BYTES + 1] = {};
+  WriteStatus lastWriteStatus = WriteStatus::None;
   bool running = false;
   bool radioRunning = false;
   bool mailboxMode = false;

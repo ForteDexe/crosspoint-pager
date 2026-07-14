@@ -66,7 +66,7 @@ public final class PagerRelayService extends Service {
         configureConnectionMode();
         if (ACTION_SEND.equals(action)) {
             String payload = intent.getStringExtra(EXTRA_PAYLOAD);
-            if (payload != null && PagerProtocol.utf8Length(payload) <= PagerProtocol.MAX_PAYLOAD_BYTES) {
+            if (payload != null && PagerProtocol.isValidTestPayload(payload)) {
                 client.send(payload);
             } else {
                 publishStatus("Pager payload is invalid.");

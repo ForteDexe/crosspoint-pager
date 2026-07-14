@@ -45,6 +45,7 @@ final class PagerGattClient {
     private String currentPayload;
     private String queuedPayload;
     private String lastAcknowledgedPayload;
+    private boolean readingStatusForSend;
 
     PagerGattClient(Context context, StatusCallback statusCallback) {
         this.context = context.getApplicationContext();
@@ -243,21 +244,27 @@ final class PagerGattClient {
         if (currentOperation == Operation.HOLD_LINK) {
             complete("Pager link held for battery testing.");
         } else if (currentOperation == Operation.READ_STATUS) {
-            readPagerStatus();
+            readPagerStatus(false);
         } else if (currentOperation == Operation.SEND) {
-            writePayload();
+            if (PagerProtocol.isValidClientToken(RelayPreferences.clientToken(context))) {
+                writePayload();
+            } else {
+                readPagerStatus(true);
+            }
         }
     }
 
     @SuppressLint("MissingPermission")
-    private void readPagerStatus() {
+    private void readPagerStatus(boolean forSend) {
         BluetoothGattCharacteristic characteristic = pagerService == null ? null : pagerService.getCharacteristic(STATUS_UUID);
         if (characteristic == null) {
             fail("Pager policy status is unavailable on this firmware.");
             return;
         }
-        status("Reading Pager policy...");
+        readingStatusForSend = forSend;
+        status(forSend ? "Reading Pager setup token..." : "Reading Pager policy...");
         if (gatt == null || !gatt.readCharacteristic(characteristic)) {
+            readingStatusForSend = false;
             fail("Pager policy read could not start.");
         }
     }
@@ -270,7 +277,12 @@ final class PagerGattClient {
             fail("Pager write characteristic was not found.");
             return;
         }
-        byte[] bytes = currentPayload.getBytes(StandardCharsets.UTF_8);
+        String token = RelayPreferences.clientToken(context);
+        if (!PagerProtocol.isValidAuthenticatedPayload(currentPayload, token)) {
+            fail("Pager setup token is missing or the payload is too large. Refresh pager policy first.");
+            return;
+        }
+        byte[] bytes = PagerProtocol.authenticatedPayload(currentPayload, token).getBytes(StandardCharsets.UTF_8);
         status("Sending pager update...");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             int result = gatt == null
@@ -290,8 +302,28 @@ final class PagerGattClient {
 
     private void handleStatusRead(byte[] value, int status) {
         if (status == BluetoothGatt.GATT_SUCCESS) {
-            complete("Pager policy\n" + PagerProtocol.formatStatus(new String(value, StandardCharsets.UTF_8)));
+            String rawStatus = new String(value, StandardCharsets.UTF_8);
+            String setupToken = PagerProtocol.enrollmentToken(rawStatus);
+            if (!PagerProtocol.isEnrolled(rawStatus) && PagerProtocol.isValidClientToken(setupToken)) {
+                RelayPreferences.setClientToken(context, setupToken);
+            }
+            if (readingStatusForSend) {
+                readingStatusForSend = false;
+                if (PagerProtocol.isValidClientToken(RelayPreferences.clientToken(context))) {
+                    writePayload();
+                } else if (PagerProtocol.isEnrolled(rawStatus)) {
+                    fail("X3 is already enrolled. Reset Enrolled Device on X3, then refresh pager policy.");
+                } else {
+                    fail("Pager setup token was unavailable. Re-enter Pager standby and refresh policy.");
+                }
+                return;
+            }
+            String note = !PagerProtocol.isEnrolled(rawStatus) && PagerProtocol.isValidClientToken(setupToken)
+                    ? "\nSetup token saved locally. Send one pager update to enroll this phone."
+                    : "";
+            complete("Pager policy\n" + PagerProtocol.formatStatus(rawStatus) + note);
         } else {
+            readingStatusForSend = false;
             fail("Pager policy read failed (" + status + ").");
         }
     }
@@ -299,6 +331,7 @@ final class PagerGattClient {
     private void complete(String finalStatus) {
         currentOperation = null;
         currentPayload = null;
+        readingStatusForSend = false;
         if (!keepConnected) {
             closeConnection();
         }
@@ -310,6 +343,7 @@ final class PagerGattClient {
         closeConnection();
         currentOperation = null;
         currentPayload = null;
+        readingStatusForSend = false;
         status(finalStatus);
         runQueuedPayload();
     }
@@ -317,6 +351,7 @@ final class PagerGattClient {
     private void finishAfterDisconnect(String finalStatus) {
         currentOperation = null;
         currentPayload = null;
+        readingStatusForSend = false;
         status(finalStatus);
         runQueuedPayload();
     }
@@ -346,6 +381,7 @@ final class PagerGattClient {
         closeConnection();
         currentOperation = null;
         currentPayload = null;
+        readingStatusForSend = false;
         status("Pager relay stopped.");
     }
 

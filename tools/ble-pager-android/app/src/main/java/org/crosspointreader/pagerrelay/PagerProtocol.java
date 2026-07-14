@@ -8,6 +8,10 @@ final class PagerProtocol {
     static final String PAYLOAD_UUID = "ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001";
     static final String STATUS_UUID = "ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001";
     static final int MAX_PAYLOAD_BYTES = 320;
+    static final int CLIENT_TOKEN_BYTES = 16;
+    static final String PAYLOAD_PREFIX = "XPAGER1\nDATA\n";
+    static final int AUTH_PAYLOAD_OVERHEAD_BYTES = PAYLOAD_PREFIX.length() + CLIENT_TOKEN_BYTES + 1;
+    static final int MAX_DISPLAY_PAYLOAD_BYTES = MAX_PAYLOAD_BYTES - AUTH_PAYLOAD_OVERHEAD_BYTES;
 
     private PagerProtocol() {}
 
@@ -18,12 +22,45 @@ final class PagerProtocol {
     static String notificationPayload(String title, String message, String footer) {
         String safeTitle = truncateUtf8(clean(title), 96);
         String safeFooter = truncateUtf8(clean(footer), 48);
-        int messageBudget = Math.max(0, MAX_PAYLOAD_BYTES - utf8Length(safeTitle) - utf8Length(safeFooter) - 2);
+        int messageBudget = Math.max(0, MAX_DISPLAY_PAYLOAD_BYTES - utf8Length(safeTitle) - utf8Length(safeFooter) - 2);
         return safeTitle + "\n" + truncateUtf8(clean(message), messageBudget) + "\n" + safeFooter;
     }
 
     static boolean isValidTestPayload(String payload) {
-        return !payload.trim().isEmpty() && utf8Length(payload) <= MAX_PAYLOAD_BYTES;
+        return !payload.trim().isEmpty() && utf8Length(payload) <= MAX_DISPLAY_PAYLOAD_BYTES;
+    }
+
+    static String authenticatedPayload(String displayPayload, String token) {
+        return PAYLOAD_PREFIX + token + "\n" + displayPayload;
+    }
+
+    static boolean isValidAuthenticatedPayload(String displayPayload, String token) {
+        return isValidClientToken(token)
+                && displayPayload != null
+                && utf8Length(authenticatedPayload(displayPayload, token)) <= MAX_PAYLOAD_BYTES;
+    }
+
+    static boolean isValidClientToken(String token) {
+        if (token == null || token.length() != CLIENT_TOKEN_BYTES) {
+            return false;
+        }
+        for (int index = 0; index < CLIENT_TOKEN_BYTES; index++) {
+            char character = token.charAt(index);
+            if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')
+                    || (character >= 'A' && character <= 'F'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static String enrollmentToken(String rawStatus) {
+        String token = StatusFields.parse(rawStatus).value("enroll_token");
+        return isValidClientToken(token) ? token : "";
+    }
+
+    static boolean isEnrolled(String rawStatus) {
+        return "1".equals(StatusFields.parse(rawStatus).value("enrolled"));
     }
 
     static int utf8Length(String text) {
@@ -40,9 +77,15 @@ final class PagerProtocol {
                 + formatNumber(windowSeconds) + " s receive window)";
 
         StringBuilder result = new StringBuilder()
-                .append("Availability: ").append(availability)
+                .append("Enrollment: ").append("1".equals(status.value("enrolled")) ? "enrolled" : "setup open")
+                .append("\nAvailability: ").append(availability)
                 .append("\nAlways available profile: ").append(titleCaseProfile(status.value("profile")))
                 .append("\nBLE link: ").append("1".equals(status.value("connected")) ? "connected" : "not connected");
+
+        String lastWrite = status.value("last_write");
+        if (!lastWrite.isEmpty() && !"none".equals(lastWrite)) {
+            result.append("\nLast write: ").append(lastWrite);
+        }
 
         int nextWindowMs = status.intValue("next_window_ms");
         if (!"always".equals(status.value("availability")) && nextWindowMs > 0) {

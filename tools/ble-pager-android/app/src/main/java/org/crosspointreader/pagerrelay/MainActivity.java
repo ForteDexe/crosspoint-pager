@@ -118,7 +118,7 @@ public final class MainActivity extends Activity {
         TextView testHeading = text("Test page", 20, true);
         testHeading.setPadding(0, dp(16), 0, 0);
         content.addView(testHeading);
-        content.addView(text("This uses the same title, message, footer payload and policy read as tools/ble-pager-test.", 15, false));
+        content.addView(text("This uses the same title, message, footer payload and policy read as tools/ble-pager-test. If X3 setup is open, Refresh pager policy stores its setup token locally.", 15, false));
 
         Button refreshPolicy = button("Refresh pager policy");
         refreshPolicy.setOnClickListener(view -> readPagerStatus());
@@ -204,7 +204,7 @@ public final class MainActivity extends Activity {
     private void updatePayloadState() {
         String payload = currentPayload();
         int bytes = PagerProtocol.utf8Length(payload);
-        byteCount.setText(getString(R.string.payload_byte_count, bytes, PagerProtocol.MAX_PAYLOAD_BYTES));
+        byteCount.setText(getString(R.string.payload_byte_count, bytes, PagerProtocol.MAX_DISPLAY_PAYLOAD_BYTES));
         send.setEnabled(PagerProtocol.isValidTestPayload(payload));
     }
 

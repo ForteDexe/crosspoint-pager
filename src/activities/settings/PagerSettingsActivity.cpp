@@ -14,6 +14,7 @@ namespace {
 enum class MenuItem : uint8_t {
   Availability,
   NormalPowerProfile,
+  Enrollment,
   Count,
 };
 
@@ -23,6 +24,7 @@ constexpr size_t MAILBOX_INTERVAL_COUNT = sizeof(MAILBOX_INTERVAL_MINUTES) / siz
 constexpr StrId MENU_NAMES[MENU_ITEM_COUNT] = {
     StrId::STR_PAGER_AVAILABILITY,
     StrId::STR_PAGER_NORMAL_POWER_PROFILE,
+    StrId::STR_PAGER_ENROLLED_DEVICE,
 };
 constexpr StrId NORMAL_POWER_PROFILE_NAMES[] = {
     StrId::STR_PAGER_PROFILE_RESPONSIVE,
@@ -74,6 +76,9 @@ void PagerSettingsActivity::onEnter() {
   if (SETTINGS.pagerNormalPowerProfile >= CrossPointSettings::PAGER_NORMAL_POWER_PROFILE_COUNT) {
     SETTINGS.pagerNormalPowerProfile = CrossPointSettings::PAGER_PROFILE_BALANCED;
   }
+  if (SETTINGS.pagerClientEnrolled > 1) {
+    SETTINGS.pagerClientEnrolled = 0;
+  }
   selectedIndex = 0;
   requestUpdate();
 }
@@ -117,6 +122,10 @@ void PagerSettingsActivity::handleSelection() {
       SETTINGS.pagerNormalPowerProfile =
           (SETTINGS.pagerNormalPowerProfile + 1) % CrossPointSettings::PAGER_NORMAL_POWER_PROFILE_COUNT;
       break;
+    case MenuItem::Enrollment:
+      SETTINGS.pagerClientEnrolled = 0;
+      SETTINGS.pagerClientToken[0] = '\0';
+      break;
     case MenuItem::Count:
       return;
   }
@@ -149,6 +158,9 @@ void PagerSettingsActivity::render(RenderLock&&) {
           }
           case MenuItem::NormalPowerProfile:
             return I18N.get(NORMAL_POWER_PROFILE_NAMES[SETTINGS.pagerNormalPowerProfile]);
+          case MenuItem::Enrollment:
+            return SETTINGS.pagerClientEnrolled != 0 ? I18N.get(StrId::STR_PAGER_RESET_ENROLLMENT)
+                                                     : I18N.get(StrId::STR_PAGER_SETUP_OPEN);
           case MenuItem::Count:
             return "";
         }

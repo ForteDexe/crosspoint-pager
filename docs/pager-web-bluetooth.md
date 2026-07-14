@@ -56,7 +56,11 @@ and select `.pio\build\pager_power\firmware.bin`.
    timer-based delivery. The default periodic interval is 5 minutes. The
    separate **Always Available Profile** chooses Responsive, Balanced, or Battery
    Saver link preferences when Availability is Always Available.
-3. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
+3. If you need to enroll a new browser or phone, use **Settings → System →
+   Pager → Enrolled Device → Reset** before entering Pager. With no enrolled
+   client, X3 opens setup in Always Available mode even if periodic availability
+   is selected.
+4. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
    Pager**, then put the device into sleep/Pager standby.
 
 ## Start the local web server
@@ -82,14 +86,15 @@ secure context such as `localhost` or HTTPS.
 1. Select **Connect Bluetooth** in the browser page.
 2. In the browser's device chooser, select **CrossPoint Pager**.
 3. Check **X3 Pager policy** to see the device's Availability, Always Available
-   profile, and latest negotiated BLE link timing. Select **Refresh** after the
-   connection settles if you want to reread it.
+   profile, enrollment state, and latest negotiated BLE link timing. If setup
+   is open, the policy read stores X3's setup token in this browser.
 4. Enter a title, message, and footer, then select **Send pager update**.
 
-The browser writes a compact UTF-8 GATT payload to the device. Pager refreshes
-the e-ink screen only when that payload changes. It uses fast e-ink refreshes
-for message updates and performs its cleanup refresh according to **Settings >
-Display > Refresh Frequency**.
+The browser writes a compact authenticated UTF-8 GATT payload to the device.
+The first valid write after reset enrolls this browser. Pager refreshes the
+e-ink screen only when the display payload changes. It uses fast e-ink
+refreshes for message updates and performs its cleanup refresh according to
+**Settings > Display > Refresh Frequency**.
 
 **Always Available** is the X3-controlled continuous policy: the browser
 connection stays open until the browser or user disconnects. Its Normal Power
@@ -103,9 +108,7 @@ is still selected by the service UUID. The browser cannot retry in the
 background, so use Always Available for interactive PC testing.
 
 The test page reads policy and effective link status from X3. It intentionally
-cannot write those settings: the current GATT service is not authenticated, so
-remote power-policy writes would allow any nearby client to increase battery
-use.
+cannot write those settings: X3 remains the battery-policy authority.
 
 ## If the browser cannot find Pager
 
@@ -115,5 +118,6 @@ use.
   expose the Web Bluetooth chooser.
 - Move the PC closer to the Xteink, then choose **Connect Bluetooth** again.
 
-Pager is an unbonded development service. Use it only with trusted nearby PCs
-and do not send sensitive information.
+Pager is not Bluetooth-bonded. The setup token is app-level enrollment, not
+strong cryptographic pairing. Use it only with trusted nearby PCs and do not
+send sensitive information.

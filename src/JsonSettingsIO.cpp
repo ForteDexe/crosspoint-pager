@@ -161,6 +161,10 @@ bool JsonSettingsIO::saveSettings(const CrossPointSettings& s, const char* path)
   doc["pagerConnectionMode"] = s.pagerConnectionMode;
   doc["pagerMailboxIntervalMinutes"] = s.pagerMailboxIntervalMinutes;
   doc["pagerNormalPowerProfile"] = s.pagerNormalPowerProfile;
+  doc["pagerClientEnrolled"] = s.pagerClientEnrolled;
+  if (s.pagerClientToken[0] != '\0') {
+    doc["pagerClientToken"] = s.pagerClientToken;
+  }
 
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
@@ -282,6 +286,28 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
       clamp(doc["pagerNormalPowerProfile"] | (uint8_t)CrossPointSettings::PAGER_PROFILE_BALANCED,
             CrossPointSettings::PAGER_NORMAL_POWER_PROFILE_COUNT,
             CrossPointSettings::PAGER_PROFILE_BALANCED);
+  s.pagerClientEnrolled = clamp(doc["pagerClientEnrolled"] | (uint8_t)0, (uint8_t)2, (uint8_t)0);
+  const char* storedPagerClientToken = doc["pagerClientToken"] | "";
+  strncpy(s.pagerClientToken, storedPagerClientToken, sizeof(s.pagerClientToken) - 1);
+  s.pagerClientToken[sizeof(s.pagerClientToken) - 1] = '\0';
+  const auto isHexToken = [](const char* token) {
+    if (strlen(token) != CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES) {
+      return false;
+    }
+    for (size_t index = 0; index < CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES; index++) {
+      const char character = token[index];
+      if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') ||
+            (character >= 'A' && character <= 'F'))) {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (!isHexToken(s.pagerClientToken)) {
+    s.pagerClientToken[0] = '\0';
+    s.pagerClientEnrolled = 0;
+    if (storedPagerClientToken[0] != '\0' && needsResave) *needsResave = true;
+  }
 
   LOG_DBG("CPS", "Settings loaded from file");
 

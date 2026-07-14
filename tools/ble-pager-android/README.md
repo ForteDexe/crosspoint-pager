@@ -13,7 +13,8 @@ It scans for the Pager's custom GATT service, connects, writes the latest
 payload, then disconnects by default. For X3 battery measurements in
 **Always Available** mode, the app can instead hold the BLE connection while
 the relay is active. It does not use Android's normal Bluetooth pairing, does
-not retain notification content, and does not use a network service.
+not retain notification content, and does not use a network service. It stores
+only X3's app-level Pager enrollment token.
 
 ## Payload compatibility
 
@@ -23,17 +24,20 @@ The app matches the firmware and PC test-page protocol exactly:
 - writable characteristic: `ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001`
 - read-only policy/status characteristic:
   `ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001`
-- encoding: UTF-8 `title\nmessage\nfooter`
-- maximum payload: 320 bytes
+- encoding: UTF-8 `XPAGER1\nDATA\n<16-hex-token>\n<title>\nmessage\nfooter`
+- maximum payload: 320 bytes total; display text is limited to 290 bytes after
+  the token header
 
 The test page refuses an oversized payload, like the browser test page.
 Notification delivery preserves the title and source-app footer, truncating the
 message at UTF-8 character boundaries when necessary.
 
 The policy/status read is device-owned and read-only. It reports availability,
-receive-window timing, Always Available profile, and the latest BLE link timing.
-The Android relay still writes notifications directly after connecting so
-periodic availability windows are not spent on a status read.
+receive-window timing, Always Available profile, enrollment state, and the
+latest BLE link timing. If X3 setup is open, **Refresh pager policy** stores the
+setup token locally. The first valid write enrolls the phone. After that, the
+Android relay writes notifications directly after connecting so periodic
+availability windows are not spent on a status read.
 
 ## Connection mode for battery testing
 
@@ -80,12 +84,16 @@ adb install -r app\build\outputs\apk\debug\crosspoint-pager.apk
    the app, allow *CrossPoint Pager*, then select **Start notification
    relay**. The persistent Android notification means the relay is active.
 5. To test directly, enter Title, Message, and Footer and select **Send pager
-   update**. The byte counter must remain at or below 320. Select **Refresh
-   pager policy** to read the X3-owned availability and link status.
+   update**. The byte counter must remain at or below 290. Select **Refresh
+   pager policy** to read the X3-owned availability, enrollment, and link
+   status. If X3 says setup is open, this stores the setup token locally.
 
-The app forwards all non-ongoing notifications while the relay is running. Do
-not enable it where nearby unbonded BLE delivery is inappropriate, and do not
-send sensitive notification content until Pager adds authentication.
+If the phone loses its token or X3 is reset, use **Settings → System → Pager →
+Enrolled Device → Reset** on X3, re-enter Pager standby, then select **Refresh
+pager policy** in the app. The app forwards all non-ongoing notifications while
+the relay is running. Pager enrollment is not Bluetooth bonding or strong
+cryptographic authentication, so do not enable it where nearby unbonded BLE
+delivery is inappropriate.
 
 ## Hardware validation still needed
 

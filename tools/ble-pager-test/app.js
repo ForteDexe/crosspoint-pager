@@ -2,6 +2,10 @@ const SERVICE_UUID = "ca7b0001-6f6f-4d9f-9d78-3d9c4a9ed001";
 const PAYLOAD_UUID = "ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001";
 const STATUS_UUID = "ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001";
 const MAX_PAYLOAD_BYTES = 320;
+const CLIENT_TOKEN_BYTES = 16;
+const PAYLOAD_PREFIX = "XPAGER1\nDATA\n";
+const TOKEN_STORAGE_KEY = "crosspoint-pager-client-token";
+const TOKEN_PATTERN = new RegExp(`^[0-9a-fA-F]{${CLIENT_TOKEN_BYTES}}$`);
 
 const connectButton = document.querySelector("#connect");
 const disconnectButton = document.querySelector("#disconnect");
@@ -19,19 +23,44 @@ let device;
 let payloadCharacteristic;
 let statusCharacteristic;
 let lastAcknowledgedPayload;
+let clientToken = localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+
+function cleanLine(value) {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+function isValidToken(token) {
+  return typeof token === "string" && TOKEN_PATTERN.test(token);
+}
+
+function rememberClientToken(token) {
+  if (!isValidToken(token)) {
+    return false;
+  }
+  clientToken = token;
+  localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  return true;
+}
 
 function pagerPayload() {
   return [
-    document.querySelector("#title").value,
-    document.querySelector("#message").value,
-    document.querySelector("#footer").value,
+    cleanLine(document.querySelector("#title").value),
+    cleanLine(document.querySelector("#message").value),
+    cleanLine(document.querySelector("#footer").value),
   ].join("\n");
 }
 
+function authenticatedPayload(payload) {
+  return `${PAYLOAD_PREFIX}${clientToken}\n${payload}`;
+}
+
 function updatePayloadSize() {
-  const size = encoder.encode(pagerPayload()).byteLength;
-  payloadSize.textContent = `${size} / ${MAX_PAYLOAD_BYTES} UTF-8 bytes`;
-  sendButton.disabled = !payloadCharacteristic || size === 0 || size > MAX_PAYLOAD_BYTES;
+  const payload = pagerPayload();
+  const hasToken = isValidToken(clientToken);
+  const size = encoder.encode(hasToken ? authenticatedPayload(payload) : payload).byteLength;
+  const tokenHint = hasToken ? "" : " (refresh policy to enroll first)";
+  payloadSize.textContent = `${size} / ${MAX_PAYLOAD_BYTES} UTF-8 bytes${tokenHint}`;
+  sendButton.disabled = !payloadCharacteristic || !hasToken || size === 0 || size > MAX_PAYLOAD_BYTES;
 }
 
 function setConnectionStatus(message) {
@@ -67,6 +96,9 @@ function formatNumber(value) {
 
 function renderPolicy(rawStatus) {
   const status = parseStatus(rawStatus);
+  if (status.enrolled === "0" && rememberClientToken(status.enroll_token)) {
+    sendStatus.textContent = "Setup token saved locally. Send one pager update to enroll this browser.";
+  }
   const intervalSeconds = Number(status.interval_s || 0);
   const windowSeconds = Number(status.window_ms || 0) / 1000;
   const availability = status.availability === "always"
@@ -74,10 +106,14 @@ function renderPolicy(rawStatus) {
     : `Every ${intervalSeconds / 60} min (${windowSeconds} s receive window)`;
 
   const details = [
+    `Enrollment: ${status.enrolled === "1" ? "enrolled" : "setup open"}`,
     `Availability: ${availability}`,
     `Always available profile: ${titleCaseProfile(status.profile)}`,
     `BLE link: ${status.connected === "1" ? "connected" : "not connected"}`,
   ];
+  if (status.last_write && status.last_write !== "none") {
+    details.push(`Last write: ${status.last_write}`);
+  }
 
   if (status.connected === "1" && Number(status.conn_interval_units) > 0) {
     const intervalMs = Number(status.conn_interval_units) * 1.25;
@@ -86,6 +122,7 @@ function renderPolicy(rawStatus) {
   }
 
   policyStatus.textContent = details.join("\n");
+  updatePayloadSize();
 }
 
 async function refreshPagerStatus() {
@@ -137,7 +174,12 @@ async function connect() {
 async function sendPayload(event) {
   event.preventDefault();
   const payload = pagerPayload();
-  const bytes = encoder.encode(payload);
+  if (!isValidToken(clientToken)) {
+    sendStatus.textContent = `No Pager setup token. Use Refresh policy first.`;
+    updatePayloadSize();
+    return;
+  }
+  const bytes = encoder.encode(authenticatedPayload(payload));
   if (!payloadCharacteristic || bytes.byteLength === 0 || bytes.byteLength > MAX_PAYLOAD_BYTES) {
     return;
   }

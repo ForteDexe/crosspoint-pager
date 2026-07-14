@@ -284,9 +284,12 @@ class CrossPointSettings {
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
   // Pager is opt-in through Sleep Screen. Normal keeps BLE available for
   // debugging; Mailbox uses short receive windows separated by timer light sleep.
+  static constexpr uint8_t PAGER_CLIENT_TOKEN_BYTES = 16;
   uint8_t pagerConnectionMode = PAGER_NORMAL;
   uint8_t pagerMailboxIntervalMinutes = 5;
   uint8_t pagerNormalPowerProfile = PAGER_PROFILE_BALANCED;
+  uint8_t pagerClientEnrolled = 0;
+  char pagerClientToken[PAGER_CLIENT_TOKEN_BYTES + 1] = "";
 
   ~CrossPointSettings() = default;
 

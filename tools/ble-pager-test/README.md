@@ -6,7 +6,8 @@ It writes UTF-8 text to the device's custom GATT service:
 - service: `ca7b0001-6f6f-4d9f-9d78-3d9c4a9ed001`
 - writable characteristic: `ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001`
 - read-only policy/status characteristic: `ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001`
-- payload: `title\nmessage\nfooter`, maximum 320 UTF-8 bytes
+- payload: `XPAGER1\nDATA\n<16-hex-token>\n<title>\nmessage\nfooter`;
+  maximum 320 UTF-8 bytes total, leaving 290 bytes for display text
 
 ## Run it
 
@@ -19,7 +20,7 @@ It writes UTF-8 text to the device's custom GATT service:
 
 3. Open `http://localhost:8080` in a Web Bluetooth-capable Chromium browser such as Edge or Chrome. Use **Connect Bluetooth**, choose `CrossPoint Pager`, then send an update.
 
-The browser must use `localhost` or HTTPS; do not open `index.html` directly as a file. The test service does not create a bonded or authenticated relationship yet, so use it only with trusted nearby PCs during development. Always Available responds to active scans with the `CrossPoint Pager` name. Periodic availability omits that optional response to save radio work, so it may appear unnamed. The normal operating-system pairing dialog may not list this unbonded custom GATT peripheral; use the Web Bluetooth chooser instead.
+The browser must use `localhost` or HTTPS; do not open `index.html` directly as a file. The test service does not create an OS Bluetooth bond; it uses X3's app-level Pager enrollment token instead. Always Available responds to active scans with the `CrossPoint Pager` name. Periodic availability omits that optional response to save radio work, so it may appear unnamed. The normal operating-system pairing dialog may not list this unbonded custom GATT peripheral; use the Web Bluetooth chooser instead.
 
 ## Choose the policy on X3
 
@@ -35,12 +36,18 @@ Pager standby, select **Settings → System → Pager**:
 - **Always Available Profile** selects Responsive, Balanced, or Battery Saver BLE
   connection preferences for Always Available. The central may adjust the
   requested parameters.
+- **Enrolled Device → Reset** clears the stored Pager client. The next Pager
+  session opens setup in Always Available mode, exposes a setup token through
+  the read-only status characteristic, and lets the browser enroll with its
+  first valid write.
 
-After connecting, the page reads and displays X3's policy plus the latest BLE
-link timing. This status is read-only; policy remains controlled on X3. The
-browser cannot scan and reconnect in the background, so use **Always Available**
-for interactive PC debugging. With periodic availability, connect only while
-the X3's short advertising window is visible.
+After connecting, the page reads and displays X3's policy, enrollment state,
+and latest BLE link timing. If setup is open, the page stores X3's setup token
+in browser localStorage and includes it in future writes. This status is
+read-only; policy remains controlled on X3. The browser cannot scan and
+reconnect in the background, so use **Always Available** for interactive PC
+debugging. With periodic availability, connect only while the X3's short
+advertising window is visible.
 
 ## Current power behavior
 

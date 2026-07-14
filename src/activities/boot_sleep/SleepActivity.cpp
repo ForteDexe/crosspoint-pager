@@ -9,6 +9,9 @@
 #include <I18n.h>
 #include <Txt.h>
 #include <Xtc.h>
+#include <esp_system.h>
+
+#include <cstring>
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
@@ -19,6 +22,9 @@
 #include "images/MoonIcon.h"
 
 namespace {
+static_assert(HalBlePager::CLIENT_TOKEN_BYTES == CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES,
+              "Pager BLE and settings token sizes must match");
+
 HalBlePager::NormalPowerProfile pagerNormalPowerProfile() {
   switch (SETTINGS.pagerNormalPowerProfile) {
     case CrossPointSettings::PAGER_PROFILE_RESPONSIVE:
@@ -28,6 +34,49 @@ HalBlePager::NormalPowerProfile pagerNormalPowerProfile() {
     case CrossPointSettings::PAGER_PROFILE_BALANCED:
     default:
       return HalBlePager::NormalPowerProfile::Balanced;
+  }
+}
+
+bool isPagerClientTokenValid(const char* token) {
+  if (token == nullptr || std::strlen(token) != CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES) {
+    return false;
+  }
+  for (size_t index = 0; index < CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES; index++) {
+    const char character = token[index];
+    if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') ||
+          (character >= 'A' && character <= 'F'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void generatePagerClientToken(char* destination, const size_t destinationSize) {
+  if (destination == nullptr || destinationSize < CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES + 1) {
+    return;
+  }
+
+  static constexpr char TOKEN_ALPHABET[] = "0123456789abcdef";
+  uint32_t randomValue = 0;
+  for (size_t index = 0; index < CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES; index++) {
+    if ((index % 8) == 0) {
+      randomValue = esp_random();
+    }
+    destination[index] = TOKEN_ALPHABET[randomValue & 0x0F];
+    randomValue >>= 4;
+  }
+  destination[CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES] = '\0';
+}
+
+void ensurePagerClientToken() {
+  if (isPagerClientTokenValid(SETTINGS.pagerClientToken)) {
+    return;
+  }
+
+  generatePagerClientToken(SETTINGS.pagerClientToken, sizeof(SETTINGS.pagerClientToken));
+  SETTINGS.pagerClientEnrolled = 0;
+  if (!SETTINGS.saveToFile()) {
+    LOG_ERR("PAGER", "Could not save generated Pager enrollment token");
   }
 }
 }  // namespace
@@ -55,7 +104,9 @@ void SleepActivity::onEnter() {
     if (payloadLength > 0) {
       updatePagerText(pagerPayload, payloadLength);
     }
-    pagerMailboxMode = SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_MAILBOX;
+    ensurePagerClientToken();
+    pagerMailboxMode = SETTINGS.pagerClientEnrolled != 0 &&
+                       SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_MAILBOX;
     if (pagerMailboxMode && !powerManager.canUsePagerMailboxLightSleep()) {
       LOG_ERR("PAGER", "Mailbox mode requires the pager_power firmware; using Normal mode");
       pagerMailboxMode = false;
@@ -63,13 +114,7 @@ void SleepActivity::onEnter() {
     // The controller must be initialized before automatic light sleep is
     // enabled. Its BLE wake source then keeps advertising and GATT events
     // alive while Pager otherwise sleeps.
-    const auto connectionMode =
-        pagerMailboxMode ? HalBlePager::ConnectionMode::Mailbox : HalBlePager::ConnectionMode::Normal;
-    if (blePager.begin(connectionMode, SETTINGS.pagerMailboxIntervalMinutes, pagerNormalPowerProfile())) {
-      powerManager.enablePagerLightSleep();
-    } else {
-      LOG_ERR("PAGER", "Bluetooth unavailable; Pager will stay awake");
-    }
+    startPagerBle();
     renderPagerSleepScreen(pagerRefreshMode);
     return;
   }
@@ -145,6 +190,7 @@ void SleepActivity::loop() {
   }
 
   blePager.update();
+  persistPagerEnrollmentIfNeeded();
   if (pagerMailboxMode && blePager.isMailboxWaiting()) {
     runPagerMailboxSleep();
     return;
@@ -162,6 +208,46 @@ void SleepActivity::loop() {
     pagerRefreshMode = nextPagerRefreshMode();
     requestUpdate();
   }
+}
+
+bool SleepActivity::startPagerBle() {
+  const auto connectionMode =
+      pagerMailboxMode ? HalBlePager::ConnectionMode::Mailbox : HalBlePager::ConnectionMode::Normal;
+  if (blePager.begin(connectionMode, SETTINGS.pagerMailboxIntervalMinutes, pagerNormalPowerProfile(),
+                     SETTINGS.pagerClientEnrolled != 0, SETTINGS.pagerClientToken)) {
+    powerManager.enablePagerLightSleep();
+    return true;
+  }
+
+  LOG_ERR("PAGER", "Bluetooth unavailable; Pager will stay awake");
+  return false;
+}
+
+void SleepActivity::persistPagerEnrollmentIfNeeded() {
+  char enrolledToken[CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES + 1] = {};
+  if (blePager.takeEnrollmentToken(enrolledToken, sizeof(enrolledToken)) == 0) {
+    return;
+  }
+
+  std::memcpy(SETTINGS.pagerClientToken, enrolledToken, sizeof(enrolledToken));
+  SETTINGS.pagerClientEnrolled = 1;
+  if (!SETTINGS.saveToFile()) {
+    LOG_ERR("PAGER", "Could not save Pager enrollment");
+  }
+  LOG_INF("PAGER", "Pager client enrolled");
+
+  if (pagerMailboxMode || SETTINGS.pagerConnectionMode != CrossPointSettings::PAGER_MAILBOX) {
+    return;
+  }
+  if (!powerManager.canUsePagerMailboxLightSleep()) {
+    LOG_ERR("PAGER", "Mailbox mode requires the pager_power firmware; staying Always Available after enrollment");
+    return;
+  }
+
+  powerManager.disablePagerLightSleep();
+  blePager.end();
+  pagerMailboxMode = true;
+  startPagerBle();
 }
 
 void SleepActivity::runPagerMailboxSleep() {

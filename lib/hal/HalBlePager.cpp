@@ -12,6 +12,8 @@ constexpr char DEVICE_NAME[] = "CrossPoint Pager";
 constexpr char SERVICE_UUID[] = "ca7b0001-6f6f-4d9f-9d78-3d9c4a9ed001";
 constexpr char PAYLOAD_UUID[] = "ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001";
 constexpr char STATUS_UUID[] = "ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001";
+constexpr char PAYLOAD_PREFIX[] = "XPAGER1\nDATA\n";
+constexpr size_t PAYLOAD_PREFIX_BYTES = sizeof(PAYLOAD_PREFIX) - 1;
 constexpr unsigned long RECEIVE_WINDOW_MS = 2UL * 1000UL;
 constexpr unsigned long CONNECTION_TIMEOUT_MS = 3UL * 1000UL;
 constexpr unsigned long PAYLOAD_ACK_GRACE_MS = 250UL;
@@ -42,6 +44,65 @@ ConnectionParameters parametersFor(const HalBlePager::NormalPowerProfile profile
 
 bool hasReached(const unsigned long now, const unsigned long target) {
   return static_cast<long>(now - target) >= 0;
+}
+
+bool isHexToken(const uint8_t* token) {
+  if (token == nullptr) {
+    return false;
+  }
+  for (size_t index = 0; index < HalBlePager::CLIENT_TOKEN_BYTES; index++) {
+    const uint8_t character = token[index];
+    if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') ||
+          (character >= 'A' && character <= 'F'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool tokenMatches(const char* expected, const uint8_t* provided) {
+  if (expected == nullptr || provided == nullptr) {
+    return false;
+  }
+  for (size_t index = 0; index < HalBlePager::CLIENT_TOKEN_BYTES; index++) {
+    const char expectedCharacter = expected[index];
+    const char providedCharacter = static_cast<char>(provided[index]);
+    if (expectedCharacter == '\0' || expectedCharacter != providedCharacter) {
+      return false;
+    }
+  }
+  return expected[HalBlePager::CLIENT_TOKEN_BYTES] == '\0';
+}
+
+void copyToken(char* destination, const char* source) {
+  if (destination == nullptr) {
+    return;
+  }
+  if (source == nullptr) {
+    destination[0] = '\0';
+    return;
+  }
+  size_t index = 0;
+  for (; index < HalBlePager::CLIENT_TOKEN_BYTES && source[index] != '\0'; index++) {
+    destination[index] = source[index];
+  }
+  destination[index] = '\0';
+}
+
+const char* writeStatusName(const HalBlePager::WriteStatus status) {
+  switch (status) {
+    case HalBlePager::WriteStatus::Accepted:
+      return "accepted";
+    case HalBlePager::WriteStatus::Enrolled:
+      return "enrolled";
+    case HalBlePager::WriteStatus::AuthFailed:
+      return "auth_failed";
+    case HalBlePager::WriteStatus::Invalid:
+      return "invalid";
+    case HalBlePager::WriteStatus::None:
+    default:
+      return "none";
+  }
 }
 
 class PagerServerCallbacks final : public NimBLEServerCallbacks {
@@ -81,7 +142,8 @@ PagerStatusCallbacks statusCallbacks;
 HalBlePager blePager;
 
 bool HalBlePager::begin(const ConnectionMode connectionMode, const uint8_t mailboxIntervalMinutes,
-                        const NormalPowerProfile requestedNormalPowerProfile) {
+                        const NormalPowerProfile requestedNormalPowerProfile, const bool requestedClientEnrolled,
+                        const char* requestedClientToken) {
   portENTER_CRITICAL(&payloadMutex);
   if (running) {
     portEXIT_CRITICAL(&payloadMutex);
@@ -91,6 +153,11 @@ bool HalBlePager::begin(const ConnectionMode connectionMode, const uint8_t mailb
   radioRunning = false;
   mailboxMode = connectionMode == ConnectionMode::Mailbox;
   normalPowerProfile = requestedNormalPowerProfile;
+  clientEnrolled = requestedClientEnrolled;
+  copyToken(clientToken, requestedClientToken);
+  enrollmentPending = false;
+  pendingEnrollmentToken[0] = '\0';
+  lastWriteStatus = WriteStatus::None;
   connected = false;
   connectionHandle = 0;
   connectionIntervalUnits = 0;
@@ -113,6 +180,8 @@ bool HalBlePager::begin(const ConnectionMode connectionMode, const uint8_t mailb
 
   portENTER_CRITICAL(&payloadMutex);
   running = false;
+  clientEnrolled = false;
+  clientToken[0] = '\0';
   portEXIT_CRITICAL(&payloadMutex);
   return false;
 }
@@ -221,6 +290,11 @@ void HalBlePager::end() {
   running = false;
   radioRunning = false;
   mailboxMode = false;
+  clientEnrolled = false;
+  clientToken[0] = '\0';
+  enrollmentPending = false;
+  pendingEnrollmentToken[0] = '\0';
+  lastWriteStatus = WriteStatus::None;
   connected = false;
   connectionHandle = 0;
   connectionIntervalUnits = 0;
@@ -428,20 +502,43 @@ size_t HalBlePager::takePayload(char* destination, size_t destinationSize) {
   return result;
 }
 
+size_t HalBlePager::takeEnrollmentToken(char* destination, size_t destinationSize) {
+  if (destination == nullptr || destinationSize < CLIENT_TOKEN_BYTES + 1) {
+    return 0;
+  }
+
+  portENTER_CRITICAL(&payloadMutex);
+  if (!enrollmentPending) {
+    portEXIT_CRITICAL(&payloadMutex);
+    return 0;
+  }
+
+  std::memcpy(destination, pendingEnrollmentToken, CLIENT_TOKEN_BYTES + 1);
+  enrollmentPending = false;
+  portEXIT_CRITICAL(&payloadMutex);
+  return CLIENT_TOKEN_BYTES;
+}
+
 size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) const {
   if (destination == nullptr || destinationSize == 0) {
     return 0;
   }
 
   const unsigned long now = millis();
+  char statusToken[CLIENT_TOKEN_BYTES + 1] = {};
   portENTER_CRITICAL(&payloadMutex);
   const bool statusMailboxMode = mailboxMode;
   const bool statusConnected = connected;
+  const bool statusClientEnrolled = clientEnrolled;
   const unsigned long statusMailboxIntervalMs = mailboxIntervalMs;
   const NormalPowerProfile statusPowerProfile = normalPowerProfile;
   const uint16_t statusConnectionIntervalUnits = connectionIntervalUnits;
   const uint16_t statusConnectionLatency = connectionLatency;
   const uint16_t statusSupervisionTimeoutUnits = supervisionTimeoutUnits;
+  const WriteStatus statusLastWrite = lastWriteStatus;
+  if (!statusClientEnrolled) {
+    std::memcpy(statusToken, clientToken, CLIENT_TOKEN_BYTES + 1);
+  }
   const unsigned long nextWindowMs =
       statusMailboxMode && radioState == RadioState::MailboxWaiting && !hasReached(now, nextMailboxWindowAt)
           ? nextMailboxWindowAt - now
@@ -450,11 +547,13 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
 
   const int written = snprintf(
       destination, destinationSize,
-      "v=1;availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;connected=%u;conn_interval_units=%u;"
-      "conn_latency=%u;conn_timeout_units=%u;next_window_ms=%lu",
+      "v=2;availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;connected=%u;enrolled=%u;"
+      "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
+      "next_window_ms=%lu",
       statusMailboxMode ? "mailbox" : "always", statusMailboxIntervalMs / 1000UL, RECEIVE_WINDOW_MS,
-      parametersFor(statusPowerProfile).name, statusConnected ? 1U : 0U, statusConnectionIntervalUnits,
-      statusConnectionLatency, statusSupervisionTimeoutUnits, nextWindowMs);
+      parametersFor(statusPowerProfile).name, statusConnected ? 1U : 0U, statusClientEnrolled ? 1U : 0U,
+      statusToken, writeStatusName(statusLastWrite), statusConnectionIntervalUnits, statusConnectionLatency,
+      statusSupervisionTimeoutUnits, nextWindowMs);
   if (written <= 0) {
     destination[0] = '\0';
     return 0;
@@ -521,20 +620,47 @@ void HalBlePager::storePayload(const uint8_t* data, const size_t length) {
     return;
   }
 
+  const size_t tokenOffset = PAYLOAD_PREFIX_BYTES;
+  const size_t payloadOffset = PAYLOAD_PREFIX_BYTES + CLIENT_TOKEN_BYTES + 1;
+  const bool hasProtocolFrame =
+      length > payloadOffset && std::memcmp(data, PAYLOAD_PREFIX, PAYLOAD_PREFIX_BYTES) == 0 &&
+      data[PAYLOAD_PREFIX_BYTES + CLIENT_TOKEN_BYTES] == '\n' && isHexToken(data + tokenOffset);
+  const uint8_t* displayPayload = hasProtocolFrame ? data + payloadOffset : nullptr;
+  const size_t displayPayloadLength = hasProtocolFrame ? length - payloadOffset : 0;
+
   const unsigned long now = millis();
   portENTER_CRITICAL(&payloadMutex);
   if (mailboxMode && connected) {
     disconnectAfterAt = now + PAYLOAD_ACK_GRACE_MS;
     disconnectRequested = false;
   }
-  if (payloadLength == length && std::memcmp(payload, data, length) == 0) {
+
+  if (!hasProtocolFrame) {
+    lastWriteStatus = WriteStatus::Invalid;
+    portEXIT_CRITICAL(&payloadMutex);
+    return;
+  }
+  if (!tokenMatches(clientToken, data + tokenOffset)) {
+    lastWriteStatus = WriteStatus::AuthFailed;
     portEXIT_CRITICAL(&payloadMutex);
     return;
   }
 
-  std::memcpy(payload, data, length);
-  payload[length] = '\0';
-  payloadLength = length;
-  payloadPending = true;
+  if (!clientEnrolled) {
+    clientEnrolled = true;
+    enrollmentPending = true;
+    std::memcpy(pendingEnrollmentToken, data + tokenOffset, CLIENT_TOKEN_BYTES);
+    pendingEnrollmentToken[CLIENT_TOKEN_BYTES] = '\0';
+    lastWriteStatus = WriteStatus::Enrolled;
+  } else {
+    lastWriteStatus = WriteStatus::Accepted;
+  }
+
+  if (payloadLength != displayPayloadLength || std::memcmp(payload, displayPayload, displayPayloadLength) != 0) {
+    std::memcpy(payload, displayPayload, displayPayloadLength);
+    payload[displayPayloadLength] = '\0';
+    payloadLength = displayPayloadLength;
+    payloadPending = true;
+  }
   portEXIT_CRITICAL(&payloadMutex);
 }
