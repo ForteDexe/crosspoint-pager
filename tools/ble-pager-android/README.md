@@ -60,13 +60,13 @@ then run from this directory:
 The APK is written to:
 
 ```text
-app\build\outputs\apk\debug\app-debug.apk
+app\build\outputs\apk\debug\crosspoint-pager.apk
 ```
 
 Install on a connected Android device with:
 
 ```powershell
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb install -r app\build\outputs\apk\debug\crosspoint-pager.apk
 ```
 
 ## Use it

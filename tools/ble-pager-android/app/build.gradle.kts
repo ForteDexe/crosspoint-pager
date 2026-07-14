@@ -1,3 +1,5 @@
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+
 plugins {
     id("com.android.application")
 }
@@ -23,5 +25,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+android.applicationVariants.all {
+    outputs.all {
+        (this as BaseVariantOutputImpl).outputFileName = "crosspoint-pager.apk"
     }
 }
