@@ -51,6 +51,11 @@ debugging. A first valid setup write is acknowledged before X3 disconnects and
 switches to configured periodic availability. After that, connect only while
 the X3's short advertising window is visible.
 
+After each write, the page reads firmware status to distinguish `accepted`,
+`unchanged`, and rejected authenticated payloads. The duplicate baseline resets
+whenever X3 enters a new Pager session, so resending the previous session's
+message is accepted once and repeated messages within that session are skipped.
+
 ## Current power behavior
 
 Pager is intentionally not true deep sleep: ESP32-C3 deep sleep powers the BLE radio off. With periodic availability, X3 uses timer light sleep with BLE fully deinitialized between receive windows; its battery latch remains held so it resumes without rebooting. It performs an e-ink refresh only after a changed payload arrives. Message updates use fast refresh; the cleanup refresh follows **Settings > Display > Refresh Frequency**. Measure current before making battery-life claims.

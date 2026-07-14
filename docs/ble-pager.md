@@ -117,11 +117,17 @@ populated while setup is open), `last_write`,
 `conn_interval_units` (1.25 ms units), `conn_latency`, `conn_timeout_units`
 (10 ms units), and `next_window_ms`. The `profile` key is present only while
 effective availability is Always Available. Clients can read the schedule and
-link state, but cannot change the battery policy. Status version 4 retains the
+link state, but cannot change the battery policy. Status version 5 retains the
 effective/configured availability split and adds the detected X3/X4 model plus
-a stable 12-hex hardware identity. The Android companion stores that identity
-and the observed BLE address only after it verifies an authenticated write, then
-targets the same reader on later scans.
+a stable 12-hex hardware identity and the `unchanged` write result. The Android
+companion stores that identity and observed BLE address after reading a complete
+policy, then targets the same reader on later scans.
+
+`last_write` reports `accepted`, `unchanged`, `enrolled`, `auth_failed`,
+`invalid`, or `none`. Duplicate suppression is scoped to one Pager screen
+session: the first valid payload after entering Pager is accepted even when it
+matches the previous session, while repeats during the same session report
+`unchanged` and do not repaint the e-ink screen.
 
 The Android companion keeps only one selected Xteink. Choosing another address
 stops its active relay/diagnostic modes and clears the previous identity, token,

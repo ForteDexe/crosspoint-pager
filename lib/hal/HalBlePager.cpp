@@ -124,6 +124,8 @@ const char* writeStatusName(const HalBlePager::WriteStatus status) {
   switch (status) {
     case HalBlePager::WriteStatus::Accepted:
       return "accepted";
+    case HalBlePager::WriteStatus::Unchanged:
+      return "unchanged";
     case HalBlePager::WriteStatus::Enrolled:
       return "enrolled";
     case HalBlePager::WriteStatus::AuthFailed:
@@ -131,9 +133,9 @@ const char* writeStatusName(const HalBlePager::WriteStatus status) {
     case HalBlePager::WriteStatus::Invalid:
       return "invalid";
     case HalBlePager::WriteStatus::None:
-    default:
       return "none";
   }
+  return "none";
 }
 
 class PagerServerCallbacks final : public NimBLEServerCallbacks {
@@ -346,6 +348,14 @@ void HalBlePager::end() {
     NimBLEDevice::deinit(true);
   }
   LOG_INF("BLE", "Pager stopped");
+}
+
+void HalBlePager::resetPayloadHistory() {
+  portENTER_CRITICAL(&payloadMutex);
+  payload[0] = '\0';
+  payloadLength = 0;
+  payloadPending = false;
+  portEXIT_CRITICAL(&payloadMutex);
 }
 
 bool HalBlePager::isRunning() const {
@@ -609,7 +619,7 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
   if (statusMailboxMode) {
     written = snprintf(
         destination, destinationSize,
-        "v=4;model=%s;device_id=%s;availability=mailbox;configured_availability=%s;interval_s=%lu;window_ms=%lu;"
+        "v=5;model=%s;device_id=%s;availability=mailbox;configured_availability=%s;interval_s=%lu;window_ms=%lu;"
         "connected=%u;enrolled=%u;"
         "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
         "next_window_ms=%lu",
@@ -621,7 +631,7 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
   } else {
     written = snprintf(
         destination, destinationSize,
-        "v=4;model=%s;device_id=%s;availability=always;configured_availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;"
+        "v=5;model=%s;device_id=%s;availability=always;configured_availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;"
         "connected=%u;enrolled=%u;"
         "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
         "next_window_ms=%lu",
@@ -738,6 +748,8 @@ void HalBlePager::storePayload(const uint8_t* data, const size_t length) {
     return;
   }
 
+  const bool payloadChanged =
+      payloadLength != displayPayloadLength || std::memcmp(payload, displayPayload, displayPayloadLength) != 0;
   if (!clientEnrolled) {
     clientEnrolled = true;
     enrollmentPending = true;
@@ -750,10 +762,10 @@ void HalBlePager::storePayload(const uint8_t* data, const size_t length) {
       disconnectRequested = false;
     }
   } else {
-    lastWriteStatus = WriteStatus::Accepted;
+    lastWriteStatus = payloadChanged ? WriteStatus::Accepted : WriteStatus::Unchanged;
   }
 
-  if (payloadLength != displayPayloadLength || std::memcmp(payload, displayPayload, displayPayloadLength) != 0) {
+  if (payloadChanged) {
     std::memcpy(payload, displayPayload, displayPayloadLength);
     payload[displayPayloadLength] = '\0';
     payloadLength = displayPayloadLength;

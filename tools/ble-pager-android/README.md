@@ -95,8 +95,9 @@ mailbox timing before storing the new selection.
 
 By default, only **Refresh pager policy** may update the persisted Pager status
 or complete enrollment. Sends still read `last_write` after a GATT write to
-verify that Xteink accepted the token, but that verification does not replace
-the stored policy. **Auto update pager policy** is an explicit opt-in: when
+verify that Xteink accepted the token and whether the firmware skipped an
+unchanged payload, but that verification does not replace the stored policy.
+**Auto update pager policy** is an explicit opt-in: when
 enabled, a successful send or Beat status read from the already-selected
 Xteink may update the stored policy. The switch never selects, changes, or
 enrolls a device and does not start an independent scan.

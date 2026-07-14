@@ -22,7 +22,6 @@ const decoder = new TextDecoder();
 let device;
 let payloadCharacteristic;
 let statusCharacteristic;
-let lastAcknowledgedPayload;
 let clientToken = localStorage.getItem(TOKEN_STORAGE_KEY) || "";
 
 function cleanLine(value) {
@@ -196,14 +195,17 @@ async function sendPayload(event) {
 
   try {
     sendStatus.textContent = "Sending…";
-    const isIdentical = payload === lastAcknowledgedPayload;
     if (payloadCharacteristic.writeValueWithResponse) {
       await payloadCharacteristic.writeValueWithResponse(bytes);
     } else {
       await payloadCharacteristic.writeValue(bytes);
     }
-    lastAcknowledgedPayload = payload;
-    sendStatus.textContent = isIdentical
+    const value = await statusCharacteristic.readValue();
+    const status = parseStatus(decoder.decode(value));
+    if (!["accepted", "unchanged", "enrolled"].includes(status.last_write)) {
+      throw new Error(`Xteink rejected the Pager write (${status.last_write || "unknown"}).`);
+    }
+    sendStatus.textContent = status.last_write === "unchanged"
       ? "Pager update acknowledged.\nMESSAGE IDENTICAL, X3 WILL NOT UPDATE CONTENT!"
       : "Pager update acknowledged.";
   } catch (error) {

@@ -172,7 +172,11 @@ final class PagerProtocol {
 
     static boolean wasLastWriteAccepted(String rawStatus) {
         String lastWrite = StatusFields.parse(rawStatus).value("last_write");
-        return "accepted".equals(lastWrite) || "enrolled".equals(lastWrite);
+        return "accepted".equals(lastWrite) || "unchanged".equals(lastWrite) || "enrolled".equals(lastWrite);
+    }
+
+    static boolean wasLastWriteUnchanged(String rawStatus) {
+        return "unchanged".equals(StatusFields.parse(rawStatus).value("last_write"));
     }
 
     static String deviceLabel(PagerStatus status) {

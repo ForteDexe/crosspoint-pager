@@ -33,6 +33,7 @@ class HalBlePager {
   enum class WriteStatus : uint8_t {
     None,
     Accepted,
+    Unchanged,
     Enrolled,
     AuthFailed,
     Invalid,
@@ -41,6 +42,10 @@ class HalBlePager {
   bool begin(ConnectionMode connectionMode, ConnectionMode configuredConnectionMode, uint8_t mailboxIntervalMinutes,
              NormalPowerProfile normalPowerProfile, bool clientEnrolled, const char* clientToken);
   void end();
+
+  // Starts a new screen session with no duplicate-comparison baseline. Radio
+  // restarts inside the same Pager session deliberately do not call this.
+  void resetPayloadHistory();
 
   // Advances the bounded connection/window state machine from the activity
   // loop. This deliberately keeps NimBLE operations out of its callbacks.

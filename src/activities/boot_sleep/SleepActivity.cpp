@@ -100,10 +100,7 @@ void SleepActivity::onEnter() {
     if (pagerLowBatteryDetected) {
       return;
     }
-    const size_t payloadLength = blePager.takePayload(pagerPayload, sizeof(pagerPayload));
-    if (payloadLength > 0) {
-      updatePagerText(pagerPayload, payloadLength);
-    }
+    blePager.resetPayloadHistory();
     ensurePagerClientToken();
     pagerMailboxMode = SETTINGS.pagerClientEnrolled != 0 &&
                        SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_MAILBOX;

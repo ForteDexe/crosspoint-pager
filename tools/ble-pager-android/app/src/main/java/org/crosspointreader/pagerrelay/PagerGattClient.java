@@ -52,9 +52,7 @@ final class PagerGattClient {
     private Operation currentOperation;
     private String currentPayload;
     private String queuedPayload;
-    private String lastAcknowledgedPayload;
     private String pendingWriteResult;
-    private boolean pendingSendIdentical;
     private String activeDeviceAddress;
     private boolean mailboxScheduleKnown;
     private boolean mailboxConfigured;
@@ -637,17 +635,12 @@ final class PagerGattClient {
                 return;
             }
             if (currentOperation == Operation.SEND) {
-                pendingSendIdentical = currentPayload != null && currentPayload.equals(lastAcknowledgedPayload);
-                pendingWriteResult = pendingSendIdentical
-                        ? "Pager update sent.\nMessage identical; Xteink will not update content."
-                        : "Pager update sent.";
+                pendingWriteResult = "Pager update sent.";
                 currentOperation = Operation.VERIFY_SEND;
                 readPagerStatus();
                 return;
             }
-            complete(pendingSendIdentical
-                    ? "Pager update sent.\nMessage identical; Xteink will not update content."
-                    : "Pager update sent.");
+            complete("Pager update sent.");
         }
 
         @Override
@@ -823,7 +816,9 @@ final class PagerGattClient {
             return;
         }
         storeObservedPolicyIfAllowed(status, rawStatus, false, false);
-        complete(writeResult == null ? "Pager update sent." : writeResult);
+        complete(PagerProtocol.wasLastWriteUnchanged(rawStatus)
+                ? "Pager update sent.\nMessage identical; Xteink will not update content."
+                : writeResult == null ? "Pager update sent." : writeResult);
     }
 
     private void rememberPagerIdentity(PagerProtocol.PagerStatus status) {
@@ -856,7 +851,6 @@ final class PagerGattClient {
             }
             return;
         }
-        lastAcknowledgedPayload = currentPayload;
         if (!mailboxAttemptActive) {
             return;
         }
@@ -1000,7 +994,6 @@ final class PagerGattClient {
 
     private void clearPendingWriteState() {
         pendingWriteResult = null;
-        pendingSendIdentical = false;
     }
 
     void close() {
