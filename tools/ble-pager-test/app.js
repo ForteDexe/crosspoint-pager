@@ -18,6 +18,7 @@ const decoder = new TextDecoder();
 let device;
 let payloadCharacteristic;
 let statusCharacteristic;
+let lastAcknowledgedPayload;
 
 function pagerPayload() {
   return [
@@ -135,19 +136,24 @@ async function connect() {
 
 async function sendPayload(event) {
   event.preventDefault();
-  const bytes = encoder.encode(pagerPayload());
+  const payload = pagerPayload();
+  const bytes = encoder.encode(payload);
   if (!payloadCharacteristic || bytes.byteLength === 0 || bytes.byteLength > MAX_PAYLOAD_BYTES) {
     return;
   }
 
   try {
     sendStatus.textContent = "Sending…";
+    const isIdentical = payload === lastAcknowledgedPayload;
     if (payloadCharacteristic.writeValueWithResponse) {
       await payloadCharacteristic.writeValueWithResponse(bytes);
     } else {
       await payloadCharacteristic.writeValue(bytes);
     }
-    sendStatus.textContent = "Pager update acknowledged.";
+    lastAcknowledgedPayload = payload;
+    sendStatus.textContent = isIdentical
+      ? "Pager update acknowledged.\nMESSAGE IDENTICAL, X3 WILL NOT UPDATE CONTENT!"
+      : "Pager update acknowledged.";
   } catch (error) {
     sendStatus.textContent = `Send failed: ${error.message}`;
   }

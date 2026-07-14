@@ -8,6 +8,7 @@ h2 { margin: 0; font-size: 1.1rem; }
 .pager-policy { margin: 1.5rem 0; padding: 1rem; border: 1px solid #d1d5db; border-radius: .5rem; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
 #policy-status { display: block; white-space: pre-line; line-height: 1.6; }
+#send-status { display: block; white-space: pre-line; }
 form { display: grid; gap: 1rem; }
 label { display: grid; gap: .35rem; font-weight: 600; }
 input, textarea, button { font: inherit; }
