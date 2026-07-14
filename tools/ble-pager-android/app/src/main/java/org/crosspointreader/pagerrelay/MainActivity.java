@@ -200,6 +200,9 @@ public final class MainActivity extends Activity {
             }
         });
         content.addView(refreshPolicy);
+        policyStatus = text("Pager policy refresh is idle.", 15, false);
+        policyStatus.setPadding(0, dp(8), 0, 0);
+        content.addView(policyStatus);
         autoUpdatePolicySwitch = switchControl(getString(R.string.auto_update_pager_policy),
                 RelayPreferences.isAutoUpdatePagerPolicy(this));
         autoUpdatePolicySwitch.setOnCheckedChangeListener((view, enabled) -> {
@@ -209,9 +212,6 @@ public final class MainActivity extends Activity {
         });
         content.addView(autoUpdatePolicySwitch);
         content.addView(text(getString(R.string.auto_update_pager_policy_summary), 14, false));
-        policyStatus = text("Pager policy refresh is idle.", 15, false);
-        policyStatus.setPadding(0, dp(8), 0, 0);
-        content.addView(policyStatus);
         enrollmentResetAdvice = text(getString(R.string.pager_enrollment_reset_advice), 14, false);
         enrollmentResetAdvice.setPadding(0, dp(8), 0, 0);
         content.addView(enrollmentResetAdvice);

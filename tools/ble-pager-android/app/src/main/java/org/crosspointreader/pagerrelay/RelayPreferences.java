@@ -145,7 +145,6 @@ final class RelayPreferences {
                 .putString(PAGER_MODEL, status.model)
                 .putString(PAGER_DEVICE_ID, status.deviceId)
                 .putString(PAGER_BLUETOOTH_ADDRESS, bluetoothAddress)
-                .putBoolean(PAGER_ENROLLED, true)
                 .apply();
     }
 

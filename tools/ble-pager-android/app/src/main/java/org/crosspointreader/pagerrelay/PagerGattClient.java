@@ -54,6 +54,7 @@ final class PagerGattClient {
     private String queuedPayload;
     private String lastAcknowledgedPayload;
     private String pendingWriteResult;
+    private boolean pendingSendIdentical;
     private String activeDeviceAddress;
     private boolean mailboxScheduleKnown;
     private boolean mailboxConfigured;
@@ -580,6 +581,10 @@ final class PagerGattClient {
         @Override
         @SuppressLint("MissingPermission")
         public void onConnectionStateChange(BluetoothGatt connection, int status, int newState) {
+            if (connection != gatt) {
+                connection.close();
+                return;
+            }
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 fail("Pager connection failed (" + status + ").");
                 return;
@@ -590,7 +595,7 @@ final class PagerGattClient {
                 if (!connection.discoverServices()) {
                     fail("Could not discover Pager service.");
                 }
-            } else if (newState == BluetoothGatt.STATE_DISCONNECTED && gatt != null) {
+            } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 boolean wasActive = currentOperation != null;
                 closeConnection();
                 finishAfterDisconnect(wasActive ? "Pager disconnected before delivery." : "Pager disconnected.");
@@ -600,6 +605,9 @@ final class PagerGattClient {
         @Override
         @SuppressLint("MissingPermission")
         public void onServicesDiscovered(BluetoothGatt connection, int status) {
+            if (connection != gatt) {
+                return;
+            }
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 fail("Pager service discovery failed (" + status + ").");
                 return;
@@ -615,48 +623,29 @@ final class PagerGattClient {
         @Override
         @SuppressWarnings("deprecation") // Android 12 and earlier use this callback signature.
         public void onCharacteristicWrite(BluetoothGatt connection, BluetoothGattCharacteristic characteristic, int status) {
+            if (connection != gatt) {
+                return;
+            }
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 fail("Pager write failed (" + status + ").");
                 return;
             }
-            boolean identical = currentPayload != null && currentPayload.equals(lastAcknowledgedPayload);
-            lastAcknowledgedPayload = currentPayload;
-            boolean startedMailboxHandoff = !mailboxScheduleKnown && mailboxConfigured
-                    && mailboxIntervalMs > 0L && mailboxWindowMs > 0L;
-            if (startedMailboxHandoff) {
-                mailboxScheduleKnown = true;
-                lastMailboxWindowSeenAtMs = SystemClock.elapsedRealtime();
-                nextMailboxWindowAtMs = lastMailboxWindowSeenAtMs + mailboxWindowMs + mailboxIntervalMs;
-                persistMailboxSchedule();
-            }
-            if (mailboxAttemptActive) {
-                if (currentPayload != null && currentPayload.equals(mailboxPayload)) {
-                    mailboxPayload = null;
-                    mailboxPayloadQueuedAtMs = 0L;
-                }
-                mailboxAttemptActive = false;
-                if (!startedMailboxHandoff) {
-                    updateNextMailboxWindowFromNow();
-                }
-            }
             if (currentOperation == Operation.CONFIRM_POLICY) {
-                if (mailboxConfigured && !startedMailboxHandoff) {
-                    updateNextMailboxWindowFromNow();
-                }
                 pendingWriteResult = "Pager policy";
                 currentOperation = Operation.VERIFY_POLICY;
                 readPagerStatus();
                 return;
             }
             if (currentOperation == Operation.SEND) {
-                pendingWriteResult = identical
+                pendingSendIdentical = currentPayload != null && currentPayload.equals(lastAcknowledgedPayload);
+                pendingWriteResult = pendingSendIdentical
                         ? "Pager update sent.\nMessage identical; Xteink will not update content."
                         : "Pager update sent.";
                 currentOperation = Operation.VERIFY_SEND;
                 readPagerStatus();
                 return;
             }
-            complete(identical
+            complete(pendingSendIdentical
                     ? "Pager update sent.\nMessage identical; Xteink will not update content."
                     : "Pager update sent.");
         }
@@ -664,11 +653,17 @@ final class PagerGattClient {
         @Override
         @SuppressWarnings("deprecation") // Android 12 and earlier use this callback signature.
         public void onCharacteristicRead(BluetoothGatt connection, BluetoothGattCharacteristic characteristic, int status) {
+            if (connection != gatt) {
+                return;
+            }
             handleStatusRead(characteristic.getValue(), status);
         }
 
         @Override
         public void onCharacteristicRead(BluetoothGatt connection, BluetoothGattCharacteristic characteristic, byte[] value, int status) {
+            if (connection != gatt) {
+                return;
+            }
             handleStatusRead(value, status);
         }
     };
@@ -755,6 +750,14 @@ final class PagerGattClient {
                 fail("A different CrossPoint Pager answered. Forget the stored Xteink before changing devices.");
                 return;
             }
+            if (!pagerStatus.usablePolicy) {
+                if (currentOperation == Operation.BEAT_STATUS) {
+                    retryBeatAfterMiss("Beat: Xteink returned an incomplete Pager policy.");
+                } else if (!retryPolicyAfterMiss("Xteink returned an incomplete Pager policy.")) {
+                    fail("Xteink returned an incomplete Pager policy.");
+                }
+                return;
+            }
             if (currentOperation == Operation.VERIFY_POLICY || currentOperation == Operation.VERIFY_SEND) {
                 handleVerifiedWrite(rawStatus, pagerStatus);
                 return;
@@ -766,6 +769,7 @@ final class PagerGattClient {
                 return;
             }
 
+            rememberPagerIdentity(pagerStatus);
             storeObservedPolicyIfAllowed(pagerStatus, rawStatus, true, false);
             String setupToken = PagerProtocol.enrollmentToken(rawStatus);
             if (!PagerProtocol.isEnrolled(rawStatus) && PagerProtocol.isValidClientToken(setupToken)) {
@@ -778,9 +782,7 @@ final class PagerGattClient {
                 writePayload();
                 return;
             }
-            policyReadPending = false;
-            policyReadQueuedAtMs = 0L;
-            policyAttemptActive = false;
+            finishPolicyRefreshState();
             String tokenNote = PagerProtocol.isEnrolled(rawStatus)
                     ? "\nXteink is enrolled, but this app has no matching token. Reset Enrolled Device to reconnect it."
                     : "\nPager setup token was unavailable. Re-enter Pager standby and refresh policy.";
@@ -811,21 +813,61 @@ final class PagerGattClient {
         boolean verifiedPolicy = currentOperation == Operation.VERIFY_POLICY;
         String writeResult = pendingWriteResult;
         pendingWriteResult = null;
+        acceptVerifiedWrite(verifiedPolicy);
         if (verifiedPolicy) {
-            if (PagerProtocol.isValidDeviceId(status.deviceId) && activeDeviceAddress != null
-                    && BluetoothAdapter.checkBluetoothAddress(activeDeviceAddress)) {
-                RelayPreferences.setPagerIdentity(context, status, activeDeviceAddress);
-            }
+            rememberPagerIdentity(status);
             storeObservedPolicyIfAllowed(status, rawStatus, true, true);
-            policyReadPending = false;
-            policyReadQueuedAtMs = 0L;
-            policyAttemptActive = false;
+            finishPolicyRefreshState();
             complete("Pager policy\n" + PagerProtocol.formatStatus(rawStatus)
-                    + "\nConnection confirmed: connected or enrolled.");
+                    + "\nPager connection confirmed.");
             return;
         }
         storeObservedPolicyIfAllowed(status, rawStatus, false, false);
         complete(writeResult == null ? "Pager update sent." : writeResult);
+    }
+
+    private void rememberPagerIdentity(PagerProtocol.PagerStatus status) {
+        if (!status.usablePolicy || activeDeviceAddress == null
+                || !BluetoothAdapter.checkBluetoothAddress(activeDeviceAddress)) {
+            return;
+        }
+        RelayPreferences.setPagerIdentity(context, status, activeDeviceAddress);
+    }
+
+    private void finishPolicyRefreshState() {
+        handler.removeCallbacks(policyAttemptRunnable);
+        policyReadPending = false;
+        policyReadQueuedAtMs = 0L;
+        policyAttemptActive = false;
+    }
+
+    private void acceptVerifiedWrite(boolean policyWrite) {
+        boolean startedMailboxHandoff = !mailboxScheduleKnown && mailboxConfigured
+                && mailboxIntervalMs > 0L && mailboxWindowMs > 0L;
+        if (startedMailboxHandoff) {
+            mailboxScheduleKnown = true;
+            lastMailboxWindowSeenAtMs = SystemClock.elapsedRealtime();
+            nextMailboxWindowAtMs = lastMailboxWindowSeenAtMs + mailboxWindowMs + mailboxIntervalMs;
+            persistMailboxSchedule();
+        }
+        if (policyWrite) {
+            if (mailboxConfigured && !startedMailboxHandoff) {
+                updateNextMailboxWindowFromNow();
+            }
+            return;
+        }
+        lastAcknowledgedPayload = currentPayload;
+        if (!mailboxAttemptActive) {
+            return;
+        }
+        if (currentPayload != null && currentPayload.equals(mailboxPayload)) {
+            mailboxPayload = null;
+            mailboxPayloadQueuedAtMs = 0L;
+        }
+        mailboxAttemptActive = false;
+        if (!startedMailboxHandoff) {
+            updateNextMailboxWindowFromNow();
+        }
     }
 
     private void storeObservedPolicyIfAllowed(PagerProtocol.PagerStatus status, String rawStatus,
@@ -958,6 +1000,7 @@ final class PagerGattClient {
 
     private void clearPendingWriteState() {
         pendingWriteResult = null;
+        pendingSendIdentical = false;
     }
 
     void close() {

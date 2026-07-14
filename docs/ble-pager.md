@@ -89,7 +89,7 @@ BLE scan-response name. This lets the Android companion show a foreground
 device chooser when multiple CrossPoint Pager readers are nearby without
 connecting to each candidate. In the Android companion, **Refresh pager policy**
 shows the configured Availability as the main policy, labels temporary setup
-access separately, stores the setup token, and sends a **connected or enrolled**
+access separately, stores the setup token, and sends a **Pager connection confirmed**
 title to complete enrollment.
 
 Changing **Availability** or **Always Available Profile** also resets the

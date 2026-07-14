@@ -20,7 +20,7 @@ final class PagerProtocol {
     }
 
     static String policyConfirmationPayload() {
-        return testPayload("connected or enrolled", "", "");
+        return testPayload("Pager connection confirmed", "", "");
     }
 
     static String notificationPayload(String title, String message, String footer) {
@@ -82,12 +82,20 @@ final class PagerProtocol {
         if (configuredAvailability.isEmpty()) {
             configuredAvailability = availability;
         }
+        long intervalMs = fields.longValue("interval_s") * 1000L;
+        long windowMs = fields.longValue("window_ms");
+        boolean configuredMailbox = "mailbox".equals(configuredAvailability);
+        boolean recognizedAvailability = "always".equals(availability) || "mailbox".equals(availability);
+        boolean recognizedConfiguredAvailability = "always".equals(configuredAvailability) || configuredMailbox;
+        boolean usablePolicy = ("X3".equals(fields.value("model")) || "X4".equals(fields.value("model")))
+                && isValidDeviceId(fields.value("device_id"))
+                && recognizedAvailability
+                && recognizedConfiguredAvailability
+                && (!configuredMailbox || intervalMs > 0L && windowMs > 0L);
         return new PagerStatus(fields.value("model"), fields.value("device_id"),
-                "mailbox".equals(availability), "mailbox".equals(configuredAvailability),
+                "mailbox".equals(availability), configuredMailbox,
                 "1".equals(fields.value("enrolled")),
-                fields.longValue("interval_s") * 1000L,
-                fields.longValue("window_ms"),
-                fields.longValue("next_window_ms"));
+                intervalMs, windowMs, fields.longValue("next_window_ms"), usablePolicy);
     }
 
     static int utf8Length(String text) {
@@ -241,9 +249,10 @@ final class PagerProtocol {
         final long intervalMs;
         final long windowMs;
         final long nextWindowMs;
+        final boolean usablePolicy;
 
         PagerStatus(String model, String deviceId, boolean mailbox, boolean configuredMailbox, boolean enrolled,
-                    long intervalMs, long windowMs, long nextWindowMs) {
+                    long intervalMs, long windowMs, long nextWindowMs, boolean usablePolicy) {
             this.model = model;
             this.deviceId = deviceId;
             this.mailbox = mailbox;
@@ -252,6 +261,7 @@ final class PagerProtocol {
             this.intervalMs = intervalMs;
             this.windowMs = windowMs;
             this.nextWindowMs = nextWindowMs;
+            this.usablePolicy = usablePolicy;
         }
 
         boolean canScheduleMailbox() {

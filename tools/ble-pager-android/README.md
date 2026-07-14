@@ -42,7 +42,7 @@ configured availability, receive-window timing, enrollment state, and the
 latest BLE link timing. During enrollment, the app presents the configured
 availability as the main policy and labels temporary Always Available radio
 access separately. If Xteink setup is open, **Refresh pager policy** stores the
-setup token locally, then writes a **connected or enrolled** Pager title. That
+setup token locally, then writes a **Pager connection confirmed** title. That
 authenticated write enrolls the phone; Android derives the first expected
 mailbox window while Xteink acknowledges the write and completes the
 setup-to-mailbox handoff. Later refreshes send the same confirmation title when
@@ -70,7 +70,9 @@ The app has two Android-side connection modes:
   a short retry gap instead of waiting for the stored mailbox window. Its
   progress appears directly below the button and keeps retrying after scan,
   connection, or policy-read failures until Xteink responds, the user selects
-  **Stop policy refresh**, or the 75-minute safety limit expires.
+  **Stop policy refresh**, or the 75-minute safety limit expires. A valid policy
+  updates the top-level Pager status immediately; the refresh stops
+  automatically after its authenticated confirmation succeeds.
 - **Keep connected while relay is active** opens and holds the GATT connection
   while the **Notification relay** switch is enabled. A manual test send also
   simulates this mode by leaving its link open after delivery, even when the
@@ -200,8 +202,8 @@ Install on a connected Android device with:
    remain at or below 290. Select **Refresh pager policy** under **Pager status** to
    read the Xteink-owned availability, enrollment, model, identity, and link
    status. Policy progress stays beneath its own button. If Xteink says setup is
-   open, this stores the setup token locally and sends a **connected or enrolled**
-   Pager title to complete enrollment. While either operation is queued
+   open, this stores the setup token locally and sends a **Pager connection
+   confirmed** title to complete enrollment. While either operation is queued
    or scanning, its button
    changes to **Stop pager update retry** or **Stop policy refresh**. Select it to
    cancel immediately; otherwise the 75-minute safety expiry still applies.
