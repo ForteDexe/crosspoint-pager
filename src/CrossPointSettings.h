@@ -175,6 +175,12 @@ class CrossPointSettings {
     QUICK_RESUME_SLEEP_SCREEN_COUNT
   };
 
+  enum PAGER_CONNECTION_MODE {
+    PAGER_NORMAL = 0,
+    PAGER_MAILBOX = 1,
+    PAGER_CONNECTION_MODE_COUNT
+  };
+
   // Sleep screen settings
   uint8_t sleepScreen = DARK;
   // Sleep screen cover mode settings
@@ -269,6 +275,10 @@ class CrossPointSettings {
   uint8_t language = 0;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
+  // Pager is opt-in through Sleep Screen. Normal keeps BLE available for
+  // debugging; Mailbox uses short receive windows separated by timer light sleep.
+  uint8_t pagerConnectionMode = PAGER_NORMAL;
+  uint8_t pagerMailboxIntervalMinutes = 5;
 
   ~CrossPointSettings() = default;
 

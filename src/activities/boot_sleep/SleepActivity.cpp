@@ -42,10 +42,17 @@ void SleepActivity::onEnter() {
     if (payloadLength > 0) {
       updatePagerText(payload, payloadLength);
     }
+    pagerMailboxMode = SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_MAILBOX;
+    if (pagerMailboxMode && !powerManager.canUsePagerMailboxLightSleep()) {
+      LOG_ERR("PAGER", "Mailbox mode requires the pager_power firmware; using Normal mode");
+      pagerMailboxMode = false;
+    }
     // The controller must be initialized before automatic light sleep is
     // enabled. Its BLE wake source then keeps advertising and GATT events
     // alive while Pager otherwise sleeps.
-    if (blePager.begin()) {
+    const auto connectionMode =
+        pagerMailboxMode ? HalBlePager::ConnectionMode::Mailbox : HalBlePager::ConnectionMode::Normal;
+    if (blePager.begin(connectionMode, SETTINGS.pagerMailboxIntervalMinutes)) {
       powerManager.enablePagerLightSleep();
     } else {
       LOG_ERR("PAGER", "Bluetooth unavailable; Pager will stay awake");
@@ -112,10 +119,21 @@ void SleepActivity::loop() {
     pagerPowerButtonPressedAt = millis();
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Power) &&
-      pagerPowerButtonPressedAt != 0 &&
-      millis() - pagerPowerButtonPressedAt >= SETTINGS.getPowerButtonDuration()) {
-    exitPager();
+  if (mappedInput.wasReleased(MappedInputManager::Button::Power) && pagerPowerButtonPressedAt != 0) {
+    const bool shouldExit = millis() - pagerPowerButtonPressedAt >= SETTINGS.getPowerButtonDuration();
+    pagerPowerButtonPressedAt = 0;
+    if (shouldExit) {
+      exitPager();
+    }
+    return;
+  }
+  if (pagerPowerButtonPressedAt != 0) {
+    return;
+  }
+
+  blePager.update();
+  if (pagerMailboxMode && blePager.isMailboxWaiting()) {
+    runPagerMailboxSleep();
     return;
   }
 
@@ -131,6 +149,30 @@ void SleepActivity::loop() {
     updatePagerText(payload, payloadLength);
     pagerRefreshMode = nextPagerRefreshMode();
     requestUpdate();
+  }
+}
+
+void SleepActivity::runPagerMailboxSleep() {
+  if (blePager.isRadioRunning()) {
+    if (!blePager.suspendMailboxRadio()) {
+      return;
+    }
+  }
+
+  const unsigned long untilNextWindowMs = blePager.getMailboxSleepDurationMs();
+  if (untilNextWindowMs == 0) {
+    if (blePager.resumeMailboxWindow() && !powerManager.enablePagerLightSleep()) {
+      LOG_ERR("PAGER", "Bluetooth started without automatic light sleep");
+    }
+    return;
+  }
+
+  const unsigned long batteryPollMs = pagerBatteryPercent <= PAGER_LOW_BATTERY_POLL_START_PERCENT
+                                          ? HalPowerManager::BATTERY_POLL_MS
+                                          : untilNextWindowMs;
+  const auto wake = powerManager.sleepForPagerMailbox(std::min(untilNextWindowMs, batteryPollMs));
+  if (wake == HalPowerManager::PagerMailboxWake::Timer) {
+    checkPagerBatteryLevel(true);
   }
 }
 

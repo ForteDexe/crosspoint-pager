@@ -28,6 +28,12 @@ class HalPowerManager {
   SemaphoreHandle_t modeMutex = nullptr;  // Protect access to currentLockMode
 
  public:
+  enum class PagerMailboxWake : uint8_t {
+    Timer,
+    PowerButton,
+    Error,
+  };
+
   static constexpr int LOW_POWER_FREQ = 10;                    // MHz
   static constexpr unsigned long IDLE_POWER_SAVING_MS = 3000;  // ms
   static constexpr unsigned long BATTERY_POLL_MS = 1500;       // ms
@@ -49,6 +55,8 @@ class HalPowerManager {
   // not compiled into the current firmware.
   bool enablePagerLightSleep();
   void disablePagerLightSleep();
+  bool canUsePagerMailboxLightSleep() const;
+  PagerMailboxWake sleepForPagerMailbox(unsigned long durationMs);
 
   // RAII helper class to manage power saving locks
   // Usage: create an instance of Lock in a scope to disable power saving, for example when running a task that needs

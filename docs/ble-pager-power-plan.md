@@ -74,19 +74,26 @@ with an inline meter or shunt instead.
 
 Do not claim multi-month battery life from this phase until it is measured.
 
-### 3. Redesign Pager as a periodic mailbox if phase 2 is insufficient
+### 3. Test a radio-off periodic mailbox
 
-Deep-sleep for most of the time, then wake on a timer, advertise for a short
-receive window, collect the latest queued pager message, refresh e-ink only if
-it changed, and return to deep sleep. The sender must retain notifications until
-the next receive window, so delivery is intentionally delayed.
+Mailbox mode is now an experimental `pager_power` path. X3 deinitializes
+NimBLE, enters timer light sleep, then recreates the Pager GATT service for a
+five-second receive window. Its GPIO13 battery latch is explicitly held high,
+so this is light sleep rather than the X3's normal latch-cutting deep sleep.
 
-Before implementation, choose and document:
+The cadence is selected on X3 under **Settings → System → Pager**: 1, 5, 15,
+30, or 60 minutes (default 5). A sender must retain the latest notification
+until an advertising window is found. A valid payload write receives its normal
+GATT response, then X3 disconnects one second later; idle connections close at
+five seconds.
 
-- The wake interval and advertising-window duration.
-- The sender queue/retry behavior.
-- The expected notification delay.
-- Measured average current and battery-life estimate.
+Validate before treating this as a battery solution:
+
+- Power-button wake/exit while X3 is in the timer-light-sleep interval.
+- BLE discovery and message delivery in repeated windows.
+- Recovery after an interrupted or idle browser connection.
+- Current during radio-off interval, five-second window, and e-ink update.
+- Sender queue/retry behavior and expected notification delay for the Android app.
 
 ## Non-goal
 

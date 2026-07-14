@@ -640,12 +640,12 @@ void loop() {
     // ESP32-C3's BLE controller is not reliable at the 10 MHz idle clock.
     // Keep normal frequency whenever the opt-in pager service owns the radio;
     // BLE is otherwise completely stopped outside pairing/pager.
-    if (!blePager.isRunning() && millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
+    if (!blePager.isRadioRunning() && millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
       delay(50);
     } else {
-      if (blePager.isRunning()) {
+      if (blePager.isRadioRunning()) {
         powerManager.setPowerSaving(false);
       }
       // Short delay to prevent tight loop while still being responsive

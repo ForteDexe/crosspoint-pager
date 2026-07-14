@@ -21,6 +21,21 @@ constexpr int PAGER_LIGHT_SLEEP_MIN_FREQ_MHZ = 40;
 constexpr gpio_num_t X3_BATTERY_LATCH_GPIO = GPIO_NUM_13;
 bool pagerLightSleepEnabled = false;
 
+bool preservePagerBatteryLatch() {
+  esp_err_t result = gpio_set_direction(X3_BATTERY_LATCH_GPIO, GPIO_MODE_OUTPUT);
+  if (result == ESP_OK) {
+    result = gpio_set_level(X3_BATTERY_LATCH_GPIO, 1);
+  }
+  if (result == ESP_OK) {
+    result = gpio_sleep_sel_dis(X3_BATTERY_LATCH_GPIO);
+  }
+  if (result != ESP_OK) {
+    LOG_ERR("PWR", "Could not preserve X3 battery latch for Pager light sleep: %s", esp_err_to_name(result));
+    return false;
+  }
+  return true;
+}
+
 bool readFuelGaugeWord(uint8_t registerAddress, uint16_t* outValue) {
   if (outValue == nullptr) {
     return false;
@@ -172,15 +187,7 @@ bool HalPowerManager::enablePagerLightSleep() {
   // CONFIG_PM_SLP_DISABLE_GPIO is selected on ESP32-C3 by the IDF GPIO-reset
   // workaround; opt this latch pin out of that all-GPIO sleep isolation.
   // The normal deep-sleep path explicitly drives this same pin low later.
-  esp_err_t latchResult = gpio_set_direction(X3_BATTERY_LATCH_GPIO, GPIO_MODE_OUTPUT);
-  if (latchResult == ESP_OK) {
-    latchResult = gpio_set_level(X3_BATTERY_LATCH_GPIO, 1);
-  }
-  if (latchResult == ESP_OK) {
-    latchResult = gpio_sleep_sel_dis(X3_BATTERY_LATCH_GPIO);
-  }
-  if (latchResult != ESP_OK) {
-    LOG_ERR("PWR", "Could not preserve X3 battery latch for Pager light sleep: %s", esp_err_to_name(latchResult));
+  if (!preservePagerBatteryLatch()) {
     return false;
   }
 
@@ -237,6 +244,65 @@ void HalPowerManager::disablePagerLightSleep() {
 
   pagerLightSleepEnabled = false;
   LOG_INF("PWR", "Pager automatic light sleep disabled");
+#endif
+}
+
+bool HalPowerManager::canUsePagerMailboxLightSleep() const {
+#if CONFIG_PM_ENABLE
+  return true;
+#else
+  return false;
+#endif
+}
+
+HalPowerManager::PagerMailboxWake HalPowerManager::sleepForPagerMailbox(const unsigned long durationMs) {
+#if CONFIG_PM_ENABLE
+  if (durationMs == 0) {
+    return PagerMailboxWake::Timer;
+  }
+
+  disablePagerLightSleep();
+  if (!preservePagerBatteryLatch()) {
+    return PagerMailboxWake::Error;
+  }
+
+  const esp_err_t timerResult = esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(durationMs) * 1000ULL);
+  if (timerResult != ESP_OK) {
+    LOG_ERR("PWR", "Could not arm Pager mailbox timer: %s", esp_err_to_name(timerResult));
+    return PagerMailboxWake::Error;
+  }
+
+  const gpio_num_t powerButton = static_cast<gpio_num_t>(InputManager::POWER_BUTTON_PIN);
+  const esp_err_t gpioResult = gpio_wakeup_enable(powerButton, GPIO_INTR_LOW_LEVEL);
+  if (gpioResult != ESP_OK) {
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    LOG_ERR("PWR", "Could not configure Pager power-button wakeup: %s", esp_err_to_name(gpioResult));
+    return PagerMailboxWake::Error;
+  }
+
+  const esp_err_t buttonResult = esp_sleep_enable_gpio_wakeup();
+  if (buttonResult != ESP_OK) {
+    gpio_wakeup_disable(powerButton);
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    LOG_ERR("PWR", "Could not arm Pager power-button wakeup: %s", esp_err_to_name(buttonResult));
+    return PagerMailboxWake::Error;
+  }
+
+  const esp_err_t sleepResult = esp_light_sleep_start();
+  const esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+  gpio_wakeup_disable(powerButton);
+
+  if (sleepResult != ESP_OK) {
+    LOG_ERR("PWR", "Pager mailbox light sleep failed: %s", esp_err_to_name(sleepResult));
+    return PagerMailboxWake::Error;
+  }
+  return wakeCause == ESP_SLEEP_WAKEUP_GPIO ? PagerMailboxWake::PowerButton : PagerMailboxWake::Timer;
+#else
+  (void)durationMs;
+  LOG_ERR("PWR", "Pager mailbox light sleep is unavailable in this build");
+  return PagerMailboxWake::Error;
 #endif
 }
 

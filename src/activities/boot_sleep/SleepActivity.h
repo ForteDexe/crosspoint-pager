@@ -29,6 +29,7 @@ class SleepActivity final : public Activity {
   void renderBlankSleepScreen() const;
   void renderPagerLowBatterySleepScreen() const;
   void checkPagerBatteryLevel(bool force = false);
+  void runPagerMailboxSleep();
   void exitPager();
   HalDisplay::RefreshMode nextPagerRefreshMode();
   void renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) const;
@@ -37,6 +38,7 @@ class SleepActivity final : public Activity {
   bool fromTimeout = false;
   bool pagerLowBatterySleep = false;
   bool pagerMode = false;
+  bool pagerMailboxMode = false;
   bool pagerReturnToReader = false;
   bool pagerHasData = false;
   bool pagerLowBatteryDetected = false;

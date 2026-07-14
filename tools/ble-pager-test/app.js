@@ -76,7 +76,7 @@ async function sendPayload(event) {
     } else {
       await payloadCharacteristic.writeValue(bytes);
     }
-    sendStatus.textContent = "Pager update sent.";
+    sendStatus.textContent = "Pager update acknowledged.";
   } catch (error) {
     sendStatus.textContent = `Send failed: ${error.message}`;
   }

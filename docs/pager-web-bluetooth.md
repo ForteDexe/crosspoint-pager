@@ -49,7 +49,10 @@ and select `.pio\build\pager_power\firmware.bin`.
 ## Before starting
 
 1. Flash the firmware with one of the methods above.
-2. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
+2. In **Settings → System → Pager**, choose **Normal** for continuously
+   available PC debugging, or **Mailbox** and its 1, 5, 15, 30, or 60 minute
+   interval for timer-based delivery. The default Mailbox interval is 5 minutes.
+3. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
    Pager**, then put the device into sleep/Pager standby.
 
 ## Start the local web server
@@ -80,6 +83,13 @@ The browser writes a compact UTF-8 GATT payload to the device. Pager refreshes
 the e-ink screen only when that payload changes. It uses fast e-ink refreshes
 for message updates and performs its cleanup refresh according to **Settings >
 Display > Refresh Frequency**.
+
+**Normal** Pager mode is the X3-controlled always-available debugging policy:
+the browser connection stays open until the browser or user disconnects.
+**Mailbox** mode is also X3-controlled: it fully deinitializes BLE between
+windows, advertises for five seconds, and closes a delivered or idle connection
+within one or five seconds respectively. The browser cannot retry in the
+background, so use Normal for interactive PC testing.
 
 ## If the browser cannot find Pager
 

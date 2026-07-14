@@ -157,6 +157,10 @@ bool JsonSettingsIO::saveSettings(const CrossPointSettings& s, const char* path)
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
   doc["language"] = (s.language < getLanguageCount()) ? LANGUAGE_CODES[s.language] : "EN";
 
+  // Pager is configured only on-device through Settings > System > Pager.
+  doc["pagerConnectionMode"] = s.pagerConnectionMode;
+  doc["pagerMailboxIntervalMinutes"] = s.pagerMailboxIntervalMinutes;
+
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
   doc["language"] = (s.language < getLanguageCount()) ? LANGUAGE_CODES[s.language] : "EN";
@@ -267,6 +271,12 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
   if (doc["language"].is<const char*>()) {
     s.language = static_cast<uint8_t>(I18n::languageFromCode(doc["language"].as<const char*>()));
   }
+
+  s.pagerConnectionMode = clamp(doc["pagerConnectionMode"] | (uint8_t)CrossPointSettings::PAGER_NORMAL,
+                                 CrossPointSettings::PAGER_CONNECTION_MODE_COUNT,
+                                 CrossPointSettings::PAGER_NORMAL);
+  const uint8_t mailboxInterval = doc["pagerMailboxIntervalMinutes"] | (uint8_t)5;
+  s.pagerMailboxIntervalMinutes = mailboxInterval >= 1 && mailboxInterval <= 60 ? mailboxInterval : 5;
 
   LOG_DBG("CPS", "Settings loaded from file");
 

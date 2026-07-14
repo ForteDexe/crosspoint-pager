@@ -50,6 +50,21 @@ current-draw and reconnect study. While the pager service is running, the
 firmware keeps the ESP32-C3 at normal CPU frequency; the BLE controller is not
 reliable at the 10 MHz idle frequency.
 
+Pager policy is controlled only on X3 in **Settings → System → Pager**. It is
+persisted across reboots so a nearby client cannot choose a higher-power mode.
+
+- **Normal** is the always-available debugging mode: it advertises continuously
+  and leaves an established connection open until the client disconnects.
+- **Mailbox** uses a selectable 1, 5, 15, 30, or 60 minute cadence (default 5
+  minutes). X3 advertises for five seconds, then deinitializes NimBLE and enters
+  timer light sleep between windows. A valid GATT payload write is acknowledged
+  by its write response, then X3 disconnects after one second; an idle or
+  misbehaving client is disconnected after five seconds.
+
+Mailbox is still not true deep sleep: the X3 battery latch stays powered so the
+MCU can return from timer light sleep without rebooting. Current must still be
+measured.
+
 The battery-first implementation roadmap is tracked in [BLE Pager power
 plan](ble-pager-power-plan.md).
 

@@ -20,8 +20,24 @@ It writes UTF-8 text to the device's custom GATT service:
 
 The browser must use `localhost` or HTTPS; do not open `index.html` directly as a file. The test service does not create a bonded or authenticated relationship yet, so use it only with trusted nearby PCs during development. The device advertises its custom service and responds to active scans with the `CrossPoint Pager` name. The normal operating-system pairing dialog may not list this unbonded custom GATT peripheral; use the Web Bluetooth chooser instead.
 
+## Choose the policy on X3
+
+Pager policy belongs to the device, not to a nearby client. Before entering
+Pager standby, select **Settings → System → Pager**:
+
+- **Normal** is the continuously available debugging mode. The test page may
+  stay connected until it or the user disconnects.
+- **Mailbox** deinitializes BLE between receive windows. Select a 1, 5, 15, 30,
+  or 60 minute interval (5 minutes is the default). X3 advertises for five
+  seconds, accepts a valid payload, acknowledges its GATT write, then closes
+  the connection after one second. An idle client is closed after five seconds.
+
+The browser cannot scan and reconnect in the background, so use **Normal** for
+interactive PC debugging. In Mailbox mode, connect only while the X3's short
+advertising window is visible.
+
 ## Current power behavior
 
-Pager is intentionally not true deep sleep: ESP32-C3 deep sleep powers the BLE radio off. In this first implementation it is a powered-on standby screen and performs an e-ink refresh only after a changed payload arrives. Message updates use fast refresh; the cleanup refresh follows **Settings > Display > Refresh Frequency**. Measuring light-sleep/periodic-wake power and designing reconnect behavior are follow-up hardware work.
+Pager is intentionally not true deep sleep: ESP32-C3 deep sleep powers the BLE radio off. In Mailbox mode, X3 uses timer light sleep with BLE fully deinitialized between receive windows; its battery latch remains held so it resumes without rebooting. It performs an e-ink refresh only after a changed payload arrives. Message updates use fast refresh; the cleanup refresh follows **Settings > Display > Refresh Frequency**. Measure current before making battery-life claims.
 
 For architecture and the advertising/CPU-clock fixes that made the service discoverable, see [BLE Pager experiment](../../docs/ble-pager.md).
