@@ -1,14 +1,15 @@
 #include "HalBlePager.h"
 
 #include <Arduino.h>
+#include <HalGPIO.h>
 #include <Logging.h>
 #include <NimBLEDevice.h>
+#include <esp_mac.h>
 
 #include <cstdio>
 #include <cstring>
 
 namespace {
-constexpr char DEVICE_NAME[] = "CrossPoint Pager";
 constexpr char SERVICE_UUID[] = "ca7b0001-6f6f-4d9f-9d78-3d9c4a9ed001";
 constexpr char PAYLOAD_UUID[] = "ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001";
 constexpr char STATUS_UUID[] = "ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001";
@@ -22,6 +23,35 @@ constexpr unsigned long ENROLLMENT_ACK_GRACE_MS = 1UL * 1000UL;
 // 100 ms still gives about 20 chances per Mailbox window with fewer TX events.
 constexpr uint16_t MAILBOX_ADVERTISING_INTERVAL = 160;
 constexpr int8_t MAILBOX_TX_POWER_DBM = -6;
+
+const char* pagerDeviceId() {
+  static char deviceId[13] = {};
+  if (deviceId[0] != '\0') {
+    return deviceId;
+  }
+
+  uint8_t hardwareMac[6] = {};
+  if (esp_efuse_mac_get_default(hardwareMac) != ESP_OK) {
+    std::memcpy(deviceId, "unknown", sizeof("unknown"));
+    return deviceId;
+  }
+  snprintf(deviceId, sizeof(deviceId), "%02X%02X%02X%02X%02X%02X", hardwareMac[0], hardwareMac[1],
+           hardwareMac[2], hardwareMac[3], hardwareMac[4], hardwareMac[5]);
+  return deviceId;
+}
+
+const char* pagerDeviceName() {
+  // Built once and reused by NimBLE. The 24-byte static buffer avoids a
+  // temporary String allocation during every radio start.
+  static char deviceName[24] = {};
+  if (deviceName[0] == '\0') {
+    const char* deviceId = pagerDeviceId();
+    const size_t deviceIdLength = std::strlen(deviceId);
+    const char* shortId = deviceIdLength >= 6 ? deviceId + deviceIdLength - 6 : deviceId;
+    snprintf(deviceName, sizeof(deviceName), "CrossPoint %s %s", gpio.deviceIsX3() ? "X3" : "X4", shortId);
+  }
+  return deviceName;
+}
 
 struct ConnectionParameters {
   uint16_t minInterval;
@@ -195,7 +225,7 @@ bool HalBlePager::startRadio() {
   const NormalPowerProfile requestedNormalPowerProfile = normalPowerProfile;
   portEXIT_CRITICAL(&payloadMutex);
 
-  if (!NimBLEDevice::init(DEVICE_NAME)) {
+  if (!NimBLEDevice::init(pagerDeviceName())) {
     LOG_ERR("BLE", "NimBLE initialization failed");
     return false;
   }
@@ -251,7 +281,7 @@ bool HalBlePager::startRadio() {
     // A 128-bit UUID plus this readable device name exceed the 31-byte primary
     // advertising packet. Normal debug mode keeps the name in scan response.
     advertising->enableScanResponse(true);
-    if (!advertising->setName(DEVICE_NAME)) {
+    if (!advertising->setName(pagerDeviceName())) {
       LOG_ERR("BLE", "Could not set pager device name");
       NimBLEDevice::deinit(true);
       return false;
@@ -579,24 +609,25 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
   if (statusMailboxMode) {
     written = snprintf(
         destination, destinationSize,
-        "v=3;availability=mailbox;configured_availability=%s;interval_s=%lu;window_ms=%lu;"
+        "v=4;model=%s;device_id=%s;availability=mailbox;configured_availability=%s;interval_s=%lu;window_ms=%lu;"
         "connected=%u;enrolled=%u;"
         "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
         "next_window_ms=%lu",
-        statusConfiguredMailboxMode ? "mailbox" : "always", statusMailboxIntervalMs / 1000UL,
-        RECEIVE_WINDOW_MS, statusConnected ? 1U : 0U, statusClientEnrolled ? 1U : 0U, statusToken,
+        gpio.deviceIsX3() ? "X3" : "X4", pagerDeviceId(), statusConfiguredMailboxMode ? "mailbox" : "always",
+        statusMailboxIntervalMs / 1000UL, RECEIVE_WINDOW_MS, statusConnected ? 1U : 0U,
+        statusClientEnrolled ? 1U : 0U, statusToken,
         writeStatusName(statusLastWrite), statusConnectionIntervalUnits, statusConnectionLatency,
         statusSupervisionTimeoutUnits, nextWindowMs);
   } else {
     written = snprintf(
         destination, destinationSize,
-        "v=3;availability=always;configured_availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;"
+        "v=4;model=%s;device_id=%s;availability=always;configured_availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;"
         "connected=%u;enrolled=%u;"
         "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
         "next_window_ms=%lu",
-        statusConfiguredMailboxMode ? "mailbox" : "always", statusMailboxIntervalMs / 1000UL,
-        RECEIVE_WINDOW_MS, parametersFor(statusPowerProfile).name, statusConnected ? 1U : 0U,
-        statusClientEnrolled ? 1U : 0U, statusToken, writeStatusName(statusLastWrite),
+        gpio.deviceIsX3() ? "X3" : "X4", pagerDeviceId(), statusConfiguredMailboxMode ? "mailbox" : "always",
+        statusMailboxIntervalMs / 1000UL, RECEIVE_WINDOW_MS, parametersFor(statusPowerProfile).name,
+        statusConnected ? 1U : 0U, statusClientEnrolled ? 1U : 0U, statusToken, writeStatusName(statusLastWrite),
         statusConnectionIntervalUnits, statusConnectionLatency, statusSupervisionTimeoutUnits, nextWindowMs);
   }
   if (written <= 0) {
@@ -604,6 +635,22 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
     return 0;
   }
   return static_cast<size_t>(written) < destinationSize ? static_cast<size_t>(written) : destinationSize - 1;
+}
+
+size_t HalBlePager::copySetupLabel(char* destination, const size_t destinationSize) {
+  if (destination == nullptr || destinationSize == 0) {
+    return 0;
+  }
+
+  const char* deviceId = pagerDeviceId();
+  const size_t deviceIdLength = std::strlen(deviceId);
+  const char* shortId = deviceIdLength >= 6 ? deviceId + deviceIdLength - 6 : deviceId;
+  const int written = snprintf(destination, destinationSize, "%s %s", gpio.deviceIsX3() ? "X3" : "X4", shortId);
+  if (written <= 0 || static_cast<size_t>(written) >= destinationSize) {
+    destination[0] = '\0';
+    return 0;
+  }
+  return static_cast<size_t>(written);
 }
 
 void HalBlePager::setConnected(const bool isConnected, const uint16_t newConnectionHandle,

@@ -53,7 +53,8 @@ final class PagerGattClient {
     private String currentPayload;
     private String queuedPayload;
     private String lastAcknowledgedPayload;
-    private boolean readingStatusForSend;
+    private String pendingWriteResult;
+    private String activeDeviceAddress;
     private boolean mailboxScheduleKnown;
     private boolean mailboxConfigured;
     private boolean mailboxAttemptActive;
@@ -96,6 +97,10 @@ final class PagerGattClient {
     }
 
     void holdConnection() {
+        if (!RelayPreferences.isPagerReadyForUse(context)) {
+            status("Choose an Xteink and refresh Pager policy before starting a connection.");
+            return;
+        }
         if (!keepConnected) {
             status("Connection mode: connect per message.");
             return;
@@ -112,6 +117,10 @@ final class PagerGattClient {
     }
 
     void send(String payload) {
+        if (!RelayPreferences.isPagerReadyForUse(context)) {
+            status("Pager status is not ready. Choose an Xteink, then refresh Pager policy.");
+            return;
+        }
         if (!keepConnected) {
             queueForMailbox(payload);
             return;
@@ -129,6 +138,10 @@ final class PagerGattClient {
     }
 
     void readStatus() {
+        if (!RelayPreferences.hasPagerSelection(context)) {
+            policyStatus("Choose an Xteink before refreshing Pager policy.");
+            return;
+        }
         policyReadPending = true;
         policyReadQueuedAtMs = SystemClock.elapsedRealtime();
         if (isHoldingLink()) {
@@ -141,11 +154,11 @@ final class PagerGattClient {
                     "Pager is busy; policy scan will continue.");
             return;
         }
-        schedulePolicyAttempt(0L, "Policy refresh started; scanning until Xteink appears.");
+        schedulePolicyAttempt(0L, "Pager policy refresh started; scanning for the selected Xteink.");
     }
 
     void cancelSend() {
-        boolean cancelActiveOperation = currentOperation == Operation.SEND;
+        boolean cancelActiveOperation = currentOperation == Operation.SEND || currentOperation == Operation.VERIFY_SEND;
         cancelMailboxAttempt();
         mailboxPayload = null;
         mailboxPayloadQueuedAtMs = 0L;
@@ -155,27 +168,33 @@ final class PagerGattClient {
             closeConnection();
             currentOperation = null;
             currentPayload = null;
-            readingStatusForSend = false;
+            clearPendingWriteState();
         }
         status("Pager update retry stopped.");
     }
 
     void cancelPolicyRead() {
-        boolean cancelActiveOperation = currentOperation == Operation.READ_STATUS;
+        boolean cancelActiveOperation = isPolicyOperation();
         handler.removeCallbacks(policyAttemptRunnable);
         policyReadPending = false;
         policyReadQueuedAtMs = 0L;
         policyAttemptActive = false;
+        clearPendingWriteState();
         if (cancelActiveOperation) {
             closeConnection();
             currentOperation = null;
-            readingStatusForSend = false;
+            currentPayload = null;
         }
-        policyStatus("Policy refresh retry stopped.");
+        policyStatus("Pager policy refresh stopped.");
     }
 
     void startBeat() {
         if (beatEnabled) {
+            return;
+        }
+        if (!RelayPreferences.isPagerReadyForUse(context)) {
+            RelayPreferences.setBeatEnabled(context, false);
+            beatStatus("Beat mode requires a selected Xteink with stored Pager status.");
             return;
         }
         beatEnabled = true;
@@ -189,7 +208,6 @@ final class PagerGattClient {
             closeConnection();
             currentOperation = null;
             currentPayload = null;
-            readingStatusForSend = false;
             beatAttemptActive = false;
         }
         beatStatus("Beat mode stopped.");
@@ -293,7 +311,7 @@ final class PagerGattClient {
         if (hasPolicyReadExpired()) {
             policyReadPending = false;
             policyReadQueuedAtMs = 0L;
-            policyStatus("Policy refresh retry expired before Xteink was reachable.");
+            policyStatus("Pager policy refresh expired before the selected Xteink was reachable.");
             return;
         }
         if (isBusy()) {
@@ -341,7 +359,6 @@ final class PagerGattClient {
         closeConnection();
         currentOperation = null;
         currentPayload = null;
-        readingStatusForSend = false;
         mailboxAttemptActive = false;
         if (hasMailboxPayloadExpired()) {
             mailboxPayload = null;
@@ -359,12 +376,13 @@ final class PagerGattClient {
         }
         closeConnection();
         currentOperation = null;
-        readingStatusForSend = false;
+        currentPayload = null;
+        clearPendingWriteState();
         policyAttemptActive = false;
         if (hasPolicyReadExpired()) {
             policyReadPending = false;
             policyReadQueuedAtMs = 0L;
-            policyStatus(reason + " Policy refresh retry expired.");
+            policyStatus(reason + " Pager policy refresh expired.");
             return true;
         }
         schedulePolicyAttempt(POLICY_SCAN_RETRY_MS, reason + " Continuing policy scan.");
@@ -378,7 +396,6 @@ final class PagerGattClient {
         closeConnection();
         currentOperation = null;
         currentPayload = null;
-        readingStatusForSend = false;
         beatAttemptActive = false;
         beatStatus(reason);
         scheduleNextBeat();
@@ -465,12 +482,14 @@ final class PagerGattClient {
     private void begin(Operation operation, String payload) {
         currentOperation = operation;
         currentPayload = payload;
+        pendingWriteResult = null;
         scanAndConnect();
     }
 
     private void beginConnected(Operation operation, String payload) {
         currentOperation = operation;
         currentPayload = payload;
+        pendingWriteResult = null;
         runOperation();
     }
 
@@ -484,10 +503,18 @@ final class PagerGattClient {
             fail("BLE scanning is unavailable.");
             return;
         }
-        ScanFilter filter = new ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(SERVICE_UUID)).build();
+        String storedAddress = RelayPreferences.pagerBluetoothAddress(context);
+        if (!BluetoothAdapter.checkBluetoothAddress(storedAddress)) {
+            fail("Choose an Xteink before starting a Pager connection.");
+            return;
+        }
+        ScanFilter filter = new ScanFilter.Builder()
+                .setServiceUuid(new android.os.ParcelUuid(SERVICE_UUID))
+                .setDeviceAddress(storedAddress)
+                .build();
         ScanSettings settings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
         scanning = true;
-        status("Searching for " + PagerProtocol.DEVICE_NAME + "...");
+        status("Searching for the selected Xteink...");
         adapter.getBluetoothLeScanner().startScan(Collections.singletonList(filter), settings, scanCallback);
         handler.postDelayed(scanTimeout, SCAN_TIMEOUT_MS);
     }
@@ -525,6 +552,7 @@ final class PagerGattClient {
                 return;
             }
             stopScan();
+            activeDeviceAddress = result.getDevice().getAddress();
             status("Connecting to " + PagerProtocol.DEVICE_NAME + "...");
             gatt = result.getDevice().connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
             if (gatt == null) {
@@ -557,6 +585,7 @@ final class PagerGattClient {
                 return;
             }
             if (newState == BluetoothGatt.STATE_CONNECTED) {
+                activeDeviceAddress = connection.getDevice().getAddress();
                 status("Discovering Pager service...");
                 if (!connection.discoverServices()) {
                     fail("Could not discover Pager service.");
@@ -610,6 +639,23 @@ final class PagerGattClient {
                     updateNextMailboxWindowFromNow();
                 }
             }
+            if (currentOperation == Operation.CONFIRM_POLICY) {
+                if (mailboxConfigured && !startedMailboxHandoff) {
+                    updateNextMailboxWindowFromNow();
+                }
+                pendingWriteResult = "Pager policy";
+                currentOperation = Operation.VERIFY_POLICY;
+                readPagerStatus();
+                return;
+            }
+            if (currentOperation == Operation.SEND) {
+                pendingWriteResult = identical
+                        ? "Pager update sent.\nMessage identical; Xteink will not update content."
+                        : "Pager update sent.";
+                currentOperation = Operation.VERIFY_SEND;
+                readPagerStatus();
+                return;
+            }
             complete(identical
                     ? "Pager update sent.\nMessage identical; Xteink will not update content."
                     : "Pager update sent.");
@@ -628,38 +674,44 @@ final class PagerGattClient {
     };
 
     private void runOperation() {
-        if (currentOperation == Operation.HOLD_LINK) {
-            complete("Pager link held for battery testing.");
-        } else if (currentOperation == Operation.READ_STATUS) {
-            readPagerStatus(false);
-        } else if (currentOperation == Operation.BEAT_STATUS) {
-            readPagerStatus(false);
-        } else if (currentOperation == Operation.SEND) {
-            if (PagerProtocol.isValidClientToken(RelayPreferences.clientToken(context))) {
-                if (!keepConnected && !mailboxScheduleKnown) {
-                    readPagerStatus(true);
-                } else {
-                    writePayload();
-                }
-            } else {
-                readPagerStatus(true);
-            }
+        if (currentOperation == null) {
+            return;
+        }
+        switch (currentOperation) {
+            case HOLD_LINK:
+                complete("Pager link held for battery testing.");
+                return;
+            case READ_STATUS:
+            case BEAT_STATUS:
+                readPagerStatus();
+                return;
+            case SEND:
+                writePayload();
+                return;
+            case CONFIRM_POLICY:
+            case VERIFY_POLICY:
+            case VERIFY_SEND:
+                return;
         }
     }
 
     @SuppressLint("MissingPermission")
-    private void readPagerStatus(boolean forSend) {
+    private void readPagerStatus() {
         BluetoothGattCharacteristic characteristic = pagerService == null ? null : pagerService.getCharacteristic(STATUS_UUID);
         if (characteristic == null) {
             fail("Pager policy status is unavailable on this firmware.");
             return;
         }
-        readingStatusForSend = forSend;
-        status(currentOperation == Operation.BEAT_STATUS
-                ? "Beat: checking Xteink..."
-                : forSend ? "Reading Pager setup token..." : "Reading Pager policy...");
+        String readStatus;
+        if (currentOperation == Operation.BEAT_STATUS) {
+            readStatus = "Beat: checking Xteink...";
+        } else if (currentOperation == Operation.VERIFY_POLICY || currentOperation == Operation.VERIFY_SEND) {
+            readStatus = "Confirming the Xteink write...";
+        } else {
+            readStatus = "Reading Pager policy...";
+        }
+        status(readStatus);
         if (gatt == null || !gatt.readCharacteristic(characteristic)) {
-            readingStatusForSend = false;
             fail("Pager policy read could not start.");
         }
     }
@@ -674,7 +726,7 @@ final class PagerGattClient {
         }
         String token = RelayPreferences.clientToken(context);
         if (!PagerProtocol.isValidAuthenticatedPayload(currentPayload, token)) {
-            fail("Pager setup token is missing or the payload is too large. Refresh pager policy first.");
+            fail("Pager setup token is missing or the payload is too large. Refresh Pager policy first.");
             return;
         }
         byte[] bytes = PagerProtocol.authenticatedPayload(currentPayload, token).getBytes(StandardCharsets.UTF_8);
@@ -698,36 +750,42 @@ final class PagerGattClient {
     private void handleStatusRead(byte[] value, int status) {
         if (status == BluetoothGatt.GATT_SUCCESS) {
             String rawStatus = new String(value, StandardCharsets.UTF_8);
-            rememberMailboxStatus(PagerProtocol.parseStatus(rawStatus));
-            String setupToken = PagerProtocol.enrollmentToken(rawStatus);
-            if (!PagerProtocol.isEnrolled(rawStatus) && PagerProtocol.isValidClientToken(setupToken)) {
-                RelayPreferences.setClientToken(context, setupToken);
+            PagerProtocol.PagerStatus pagerStatus = PagerProtocol.parseStatus(rawStatus);
+            if (isUnexpectedDevice(pagerStatus)) {
+                fail("A different CrossPoint Pager answered. Forget the stored Xteink before changing devices.");
+                return;
+            }
+            if (currentOperation == Operation.VERIFY_POLICY || currentOperation == Operation.VERIFY_SEND) {
+                handleVerifiedWrite(rawStatus, pagerStatus);
+                return;
             }
             if (currentOperation == Operation.BEAT_STATUS) {
+                storeObservedPolicyIfAllowed(pagerStatus, rawStatus, false, false);
                 beatAttemptActive = false;
                 complete("Beat: Xteink online\n" + PagerProtocol.formatStatus(rawStatus));
                 return;
             }
-            if (readingStatusForSend) {
-                readingStatusForSend = false;
-                if (PagerProtocol.isValidClientToken(RelayPreferences.clientToken(context))) {
-                    writePayload();
-                } else if (PagerProtocol.isEnrolled(rawStatus)) {
-                    fail("Xteink is already enrolled. Reset Enrolled Device on Xteink, then refresh pager policy.");
-                } else {
-                    fail("Pager setup token was unavailable. Re-enter Pager standby and refresh policy.");
-                }
+
+            storeObservedPolicyIfAllowed(pagerStatus, rawStatus, true, false);
+            String setupToken = PagerProtocol.enrollmentToken(rawStatus);
+            if (!PagerProtocol.isEnrolled(rawStatus) && PagerProtocol.isValidClientToken(setupToken)) {
+                RelayPreferences.setClientToken(context, setupToken);
+            }
+            String clientToken = RelayPreferences.clientToken(context);
+            if (PagerProtocol.isValidClientToken(clientToken)) {
+                currentOperation = Operation.CONFIRM_POLICY;
+                currentPayload = PagerProtocol.policyConfirmationPayload();
+                writePayload();
                 return;
             }
-            String note = !PagerProtocol.isEnrolled(rawStatus) && PagerProtocol.isValidClientToken(setupToken)
-                    ? "\nSetup token saved locally. Send one pager update to enroll this phone."
-                    : "";
             policyReadPending = false;
             policyReadQueuedAtMs = 0L;
             policyAttemptActive = false;
-            complete("Pager policy\n" + PagerProtocol.formatStatus(rawStatus) + note);
+            String tokenNote = PagerProtocol.isEnrolled(rawStatus)
+                    ? "\nXteink is enrolled, but this app has no matching token. Reset Enrolled Device to reconnect it."
+                    : "\nPager setup token was unavailable. Re-enter Pager standby and refresh policy.";
+            complete("Pager policy\n" + PagerProtocol.formatStatus(rawStatus) + tokenNote);
         } else {
-            readingStatusForSend = false;
             if (currentOperation == Operation.BEAT_STATUS) {
                 retryBeatAfterMiss("Beat: policy read failed (" + status + ").");
                 return;
@@ -736,12 +794,58 @@ final class PagerGattClient {
         }
     }
 
+    private boolean isUnexpectedDevice(PagerProtocol.PagerStatus status) {
+        String storedDeviceId = RelayPreferences.pagerDeviceId(context);
+        return PagerProtocol.isValidDeviceId(storedDeviceId)
+                && PagerProtocol.isValidDeviceId(status.deviceId)
+                && !storedDeviceId.equalsIgnoreCase(status.deviceId);
+    }
+
+    private void handleVerifiedWrite(String rawStatus, PagerProtocol.PagerStatus status) {
+        if (!PagerProtocol.wasLastWriteAccepted(rawStatus)) {
+            pendingWriteResult = null;
+            fail("Xteink rejected the authenticated Pager write. Reset Enrolled Device, then sync again.");
+            return;
+        }
+
+        boolean verifiedPolicy = currentOperation == Operation.VERIFY_POLICY;
+        String writeResult = pendingWriteResult;
+        pendingWriteResult = null;
+        if (verifiedPolicy) {
+            if (PagerProtocol.isValidDeviceId(status.deviceId) && activeDeviceAddress != null
+                    && BluetoothAdapter.checkBluetoothAddress(activeDeviceAddress)) {
+                RelayPreferences.setPagerIdentity(context, status, activeDeviceAddress);
+            }
+            storeObservedPolicyIfAllowed(status, rawStatus, true, true);
+            policyReadPending = false;
+            policyReadQueuedAtMs = 0L;
+            policyAttemptActive = false;
+            complete("Pager policy\n" + PagerProtocol.formatStatus(rawStatus)
+                    + "\nConnection confirmed: connected or enrolled.");
+            return;
+        }
+        storeObservedPolicyIfAllowed(status, rawStatus, false, false);
+        complete(writeResult == null ? "Pager update sent." : writeResult);
+    }
+
+    private void storeObservedPolicyIfAllowed(PagerProtocol.PagerStatus status, String rawStatus,
+                                               boolean manualRefresh, boolean preserveMailboxHandoff) {
+        if (!manualRefresh && !RelayPreferences.isAutoUpdatePagerPolicy(context)) {
+            return;
+        }
+        RelayPreferences.setPagerPolicy(context, status, PagerProtocol.formatTechnicalStatus(rawStatus));
+        if (preserveMailboxHandoff && status.configuredMailbox && !status.canScheduleMailbox()) {
+            return;
+        }
+        rememberMailboxStatus(status);
+    }
+
     private void complete(String finalStatus) {
         boolean completedBeat = currentOperation == Operation.BEAT_STATUS;
-        boolean completedPolicyRead = currentOperation == Operation.READ_STATUS;
+        boolean completedPolicyRead = isPolicyOperation();
         currentOperation = null;
         currentPayload = null;
-        readingStatusForSend = false;
+        clearPendingWriteState();
         if (!keepConnected) {
             closeConnection();
         }
@@ -765,10 +869,10 @@ final class PagerGattClient {
             mailboxPayloadQueuedAtMs = 0L;
         }
         boolean failedBeat = currentOperation == Operation.BEAT_STATUS || beatAttemptActive;
-        boolean failedPolicyRead = currentOperation == Operation.READ_STATUS || policyAttemptActive;
+        boolean failedPolicyRead = isPolicyOperation() || policyAttemptActive;
         currentOperation = null;
         currentPayload = null;
-        readingStatusForSend = false;
+        clearPendingWriteState();
         mailboxAttemptActive = false;
         beatAttemptActive = false;
         if (failedPolicyRead) {
@@ -777,7 +881,7 @@ final class PagerGattClient {
                 handler.removeCallbacks(policyAttemptRunnable);
                 policyReadPending = false;
                 policyReadQueuedAtMs = 0L;
-                policyStatus(finalStatus + " Policy refresh retry expired.");
+                policyStatus(finalStatus + " Pager policy refresh expired.");
             } else {
                 schedulePolicyAttempt(POLICY_SCAN_RETRY_MS,
                         finalStatus + " Continuing policy scan.");
@@ -796,7 +900,6 @@ final class PagerGattClient {
         if (beatAttemptActive) {
             currentOperation = null;
             currentPayload = null;
-            readingStatusForSend = false;
             beatAttemptActive = false;
             beatStatus("Beat: Xteink disconnected during check.");
             scheduleNextBeat();
@@ -804,12 +907,13 @@ final class PagerGattClient {
         }
         if (policyAttemptActive && policyReadPending) {
             currentOperation = null;
-            readingStatusForSend = false;
+            currentPayload = null;
+            clearPendingWriteState();
             policyAttemptActive = false;
             if (hasPolicyReadExpired()) {
                 policyReadPending = false;
                 policyReadQueuedAtMs = 0L;
-                policyStatus(finalStatus + " Policy refresh retry expired.");
+                policyStatus(finalStatus + " Pager policy refresh expired.");
             } else {
                 schedulePolicyAttempt(POLICY_SCAN_RETRY_MS, finalStatus + " Continuing policy scan.");
             }
@@ -818,14 +922,13 @@ final class PagerGattClient {
         if (mailboxAttemptActive && mailboxPayload != null && !hasMailboxPayloadExpired()) {
             currentOperation = null;
             currentPayload = null;
-            readingStatusForSend = false;
             mailboxAttemptActive = false;
             scheduleMailboxAttempt(nextMailboxRetryDelayMs(), finalStatus + " Keeping latest update queued.");
             return;
         }
         currentOperation = null;
         currentPayload = null;
-        readingStatusForSend = false;
+        clearPendingWriteState();
         mailboxAttemptActive = false;
         beatAttemptActive = false;
         status(finalStatus);
@@ -850,6 +953,11 @@ final class PagerGattClient {
             oldGatt.disconnect();
             oldGatt.close();
         }
+        activeDeviceAddress = null;
+    }
+
+    private void clearPendingWriteState() {
+        pendingWriteResult = null;
     }
 
     void close() {
@@ -863,7 +971,7 @@ final class PagerGattClient {
         closeConnection();
         currentOperation = null;
         currentPayload = null;
-        readingStatusForSend = false;
+        clearPendingWriteState();
         mailboxAttemptActive = false;
         beatAttemptActive = false;
         policyReadPending = false;
@@ -903,7 +1011,12 @@ final class PagerGattClient {
     }
 
     private boolean isPolicyStatus() {
-        return currentOperation == Operation.READ_STATUS || policyAttemptActive;
+        return isPolicyOperation() || policyAttemptActive;
+    }
+
+    private boolean isPolicyOperation() {
+        return currentOperation == Operation.READ_STATUS || currentOperation == Operation.CONFIRM_POLICY
+                || currentOperation == Operation.VERIFY_POLICY;
     }
 
     private void publishStatus(String value, long targetAtMs, EventLogCategory category,
@@ -916,15 +1029,43 @@ final class PagerGattClient {
     }
 
     boolean hasSendRetryActive() {
-        return mailboxPayload != null || queuedPayload != null || currentOperation == Operation.SEND;
+        return mailboxPayload != null || queuedPayload != null || currentOperation == Operation.SEND
+                || currentOperation == Operation.VERIFY_SEND;
     }
 
     boolean hasPolicyRetryActive() {
-        return policyReadPending || policyAttemptActive || currentOperation == Operation.READ_STATUS;
+        return policyReadPending || policyAttemptActive || isPolicyOperation();
     }
 
     boolean hasHeldConnection() {
         return isHoldingLink();
+    }
+
+    void forgetPager() {
+        resetPagerRuntime();
+        RelayPreferences.forgetPager(context);
+        status("Stored Xteink forgotten. Choose a reader before refreshing Pager policy.");
+    }
+
+    void selectPager(String address, String label) {
+        if (!BluetoothAdapter.checkBluetoothAddress(address)) {
+            status("The selected Xteink address is invalid.");
+            return;
+        }
+        resetPagerRuntime();
+        RelayPreferences.selectPager(context, address, label);
+        status("Selected " + (label == null || label.isEmpty() ? "Xteink" : label)
+                + ". Refresh Pager policy to enroll it.");
+    }
+
+    private void resetPagerRuntime() {
+        close();
+        mailboxScheduleKnown = false;
+        mailboxConfigured = false;
+        mailboxIntervalMs = 0L;
+        mailboxWindowMs = 0L;
+        lastMailboxWindowSeenAtMs = 0L;
+        nextMailboxWindowAtMs = 0L;
     }
 
     private void updateRetryPreferences() {
@@ -936,6 +1077,9 @@ final class PagerGattClient {
         HOLD_LINK,
         SEND,
         READ_STATUS,
+        CONFIRM_POLICY,
+        VERIFY_POLICY,
+        VERIFY_SEND,
         BEAT_STATUS
     }
 }

@@ -2,7 +2,9 @@ package org.crosspointreader.pagerrelay;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -24,7 +26,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
@@ -46,12 +50,21 @@ public final class MainActivity extends Activity {
     private TextView policyStatus;
     private TextView statusLog;
     private TextView learnedMailboxTiming;
+    private TextView pagerSummary;
+    private TextView technicalStatus;
+    private TextView bluetoothPermissionStatus;
+    private TextView notificationPermissionStatus;
     private TextView enrollmentResetAdvice;
     private TextView testConnectionMode;
     private Button send;
     private Button refreshPolicy;
+    private Button forgetPager;
+    private Button choosePager;
+    private Button bluetoothPermissionAction;
+    private Button notificationPermissionAction;
     private Switch notificationRelaySwitch;
     private Switch beatModeSwitch;
+    private Switch autoUpdatePolicySwitch;
     private BroadcastReceiver statusReceiver;
     private final List<LogEntry> statusLines = new ArrayList<>();
     private boolean updatingControlSwitches;
@@ -59,6 +72,10 @@ public final class MainActivity extends Activity {
     private boolean policyRetryActive;
     private boolean policyRefreshMissed;
     private boolean policyReceivedThisSession;
+    private PagerDeviceScanner deviceScanner;
+    private AlertDialog deviceChooserDialog;
+    private ArrayAdapter<String> deviceChoiceAdapter;
+    private final List<PagerDeviceScanner.DeviceCandidate> discoveredDevices = new ArrayList<>();
     private final Handler countdownHandler = new Handler(Looper.getMainLooper());
     private String sendCountdownPrefix;
     private long sendCountdownAtMs;
@@ -93,7 +110,7 @@ public final class MainActivity extends Activity {
                         intent.getBooleanExtra(PagerRelayService.EXTRA_POLICY_STATUS, false));
             }
         };
-        requestBluetoothPermissions();
+        updatePermissionStatus();
     }
 
     @Override
@@ -110,6 +127,10 @@ public final class MainActivity extends Activity {
         updateOperationButtons(RelayPreferences.isSendRetryActive(this),
                 RelayPreferences.isPolicyRetryActive(this));
         updateLearnedMailboxTiming();
+        updatePagerSummary();
+        updateTechnicalStatus();
+        updatePermissionStatus();
+        syncControlSwitches();
         if (hasBluetoothPermissions()) {
             PagerRelayService.resumeEnabledModes(this);
         }
@@ -120,8 +141,28 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        updatePermissionStatus();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_PERMISSIONS) {
+            updatePermissionStatus();
+        }
+    }
+
+    @Override
     protected void onStop() {
         countdownHandler.removeCallbacks(countdownRunnable);
+        if (deviceScanner != null) {
+            deviceScanner.stop();
+        }
+        if (deviceChooserDialog != null) {
+            deviceChooserDialog.dismiss();
+        }
         unregisterReceiver(statusReceiver);
         super.onStop();
     }
@@ -135,15 +176,72 @@ public final class MainActivity extends Activity {
         TextView heading = text(getString(R.string.app_name), 24, true);
         content.addView(heading);
         content.addView(text("Supports Xteink models X3 and X4 running CrossPoint Pager firmware.", 15, true));
-        content.addView(text("Forwards new Android notifications to the opt-in BLE Pager service. It does not pair, store, or send notifications over the internet.", 15, false));
+        content.addView(text("Forwards new Android notifications to one explicitly selected Xteink. It does not use traditional Bluetooth pairing, retain notification content, or send notifications over the internet.", 15, false));
 
-        Button permissions = button("Grant Bluetooth permissions");
-        permissions.setOnClickListener(view -> requestBluetoothPermissions());
-        content.addView(permissions);
+        TextView pagerStatusHeading = text("Pager status", 20, true);
+        pagerStatusHeading.setPadding(0, dp(16), 0, 0);
+        content.addView(pagerStatusHeading);
+        choosePager = button(getString(R.string.choose_xteink));
+        choosePager.setOnClickListener(view -> showDeviceChooser());
+        content.addView(choosePager);
+        pagerSummary = text("", 15, false);
+        content.addView(pagerSummary);
+        TextView learnedTimingHeading = text("Stored mailbox timing", 17, true);
+        content.addView(learnedTimingHeading);
+        learnedMailboxTiming = text("", 15, false);
+        content.addView(learnedMailboxTiming);
+        refreshPolicy = button(getString(R.string.refresh_pager_policy));
+        refreshPolicy.setOnClickListener(view -> {
+            if (policyRetryActive) {
+                updateOperationButtons(sendRetryActive, false);
+                PagerRelayService.cancelPolicyRead(this);
+            } else {
+                readPagerStatus();
+            }
+        });
+        content.addView(refreshPolicy);
+        autoUpdatePolicySwitch = switchControl(getString(R.string.auto_update_pager_policy),
+                RelayPreferences.isAutoUpdatePagerPolicy(this));
+        autoUpdatePolicySwitch.setOnCheckedChangeListener((view, enabled) -> {
+            if (!updatingControlSwitches) {
+                RelayPreferences.setAutoUpdatePagerPolicy(this, enabled);
+            }
+        });
+        content.addView(autoUpdatePolicySwitch);
+        content.addView(text(getString(R.string.auto_update_pager_policy_summary), 14, false));
+        policyStatus = text("Pager policy refresh is idle.", 15, false);
+        policyStatus.setPadding(0, dp(8), 0, 0);
+        content.addView(policyStatus);
+        enrollmentResetAdvice = text(getString(R.string.pager_enrollment_reset_advice), 14, false);
+        enrollmentResetAdvice.setPadding(0, dp(8), 0, 0);
+        content.addView(enrollmentResetAdvice);
+        forgetPager = button(getString(R.string.forget_stored_xteink));
+        forgetPager.setOnClickListener(view -> new AlertDialog.Builder(this)
+                .setTitle(R.string.forget_stored_xteink)
+                .setMessage("This removes the enrolled reader from the app. Reset Enrolled Device on Xteink before syncing it again.")
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.forget_stored_xteink,
+                        (dialog, which) -> PagerRelayService.forgetPager(this))
+                .show());
+        content.addView(forgetPager);
+        updateLearnedMailboxTiming();
+        updatePagerSummary();
 
-        Button notificationAccess = button("Open notification access settings");
-        notificationAccess.setOnClickListener(view -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
-        content.addView(notificationAccess);
+        TextView permissionsHeading = text("App access", 20, true);
+        permissionsHeading.setPadding(0, dp(16), 0, 0);
+        content.addView(permissionsHeading);
+        bluetoothPermissionStatus = text("", 15, true);
+        content.addView(bluetoothPermissionStatus);
+        bluetoothPermissionAction = button("Grant Bluetooth access");
+        bluetoothPermissionAction.setOnClickListener(view -> requestBluetoothPermissions());
+        content.addView(bluetoothPermissionAction);
+        notificationPermissionStatus = text("", 15, true);
+        content.addView(notificationPermissionStatus);
+        notificationPermissionAction = button("Open notification access");
+        notificationPermissionAction.setOnClickListener(
+                view -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        content.addView(notificationPermissionAction);
+        updatePermissionStatus();
 
         TextView connectionHeading = text("Connection mode", 20, true);
         connectionHeading.setPadding(0, dp(16), 0, 0);
@@ -159,6 +257,11 @@ public final class MainActivity extends Activity {
             }
             if (!enabled) {
                 PagerRelayService.stopRelay(this);
+                return;
+            }
+            if (!RelayPreferences.isPagerReadyForUse(this)) {
+                setControlSwitchChecked(notificationRelaySwitch, false);
+                status.setText(R.string.refresh_policy_before_relay);
                 return;
             }
             if (!hasBluetoothPermissions()) {
@@ -197,6 +300,11 @@ public final class MainActivity extends Activity {
                 PagerRelayService.stopBeat(this);
                 return;
             }
+            if (!RelayPreferences.isPagerReadyForUse(this)) {
+                setControlSwitchChecked(beatModeSwitch, false);
+                status.setText(R.string.refresh_policy_before_relay);
+                return;
+            }
             if (!hasBluetoothPermissions()) {
                 setControlSwitchChecked(beatModeSwitch, false);
                 requestBluetoothPermissions();
@@ -206,33 +314,17 @@ public final class MainActivity extends Activity {
         });
         debugContent.addView(beatModeSwitch);
 
-        TextView learnedTimingHeading = text("Learned mailbox timing", 20, true);
-        learnedTimingHeading.setPadding(0, dp(16), 0, 0);
-        debugContent.addView(learnedTimingHeading);
-        learnedMailboxTiming = text("", 15, false);
-        debugContent.addView(learnedMailboxTiming);
-        refreshPolicy = button(getString(R.string.refresh_pager_policy));
-        refreshPolicy.setOnClickListener(view -> {
-            if (policyRetryActive) {
-                updateOperationButtons(sendRetryActive, false);
-                PagerRelayService.cancelPolicyRead(this);
-            } else {
-                readPagerStatus();
-            }
-        });
-        debugContent.addView(refreshPolicy);
-        policyStatus = text("Policy refresh is idle.", 15, false);
-        policyStatus.setPadding(0, dp(8), 0, 0);
-        debugContent.addView(policyStatus);
-        enrollmentResetAdvice = text(getString(R.string.pager_enrollment_reset_advice), 14, false);
-        enrollmentResetAdvice.setPadding(0, dp(8), 0, 0);
-        debugContent.addView(enrollmentResetAdvice);
-        updateLearnedMailboxTiming();
+        TextView technicalHeading = text("BLE details", 20, true);
+        technicalHeading.setPadding(0, dp(16), 0, 0);
+        debugContent.addView(technicalHeading);
+        technicalStatus = text("", 14, false);
+        debugContent.addView(technicalStatus);
+        updateTechnicalStatus();
 
         TextView testHeading = text("Test page", 20, true);
         testHeading.setPadding(0, dp(16), 0, 0);
         debugContent.addView(testHeading);
-        debugContent.addView(text("This uses the same title, message, footer payload and policy read as tools/ble-pager-test. If Xteink setup is open, Refresh pager policy stores its setup token locally.", 15, false));
+        debugContent.addView(text("This uses the same title, message, footer payload and authenticated delivery check as tools/ble-pager-test. Refresh pager policy separately to complete enrollment or replace stored status.", 15, false));
         testConnectionMode = text("", 15, true);
         testConnectionMode.setPadding(0, dp(8), 0, dp(4));
         debugContent.addView(testConnectionMode);
@@ -313,6 +405,9 @@ public final class MainActivity extends Activity {
             return;
         }
         updateLearnedMailboxTiming();
+        updatePagerSummary();
+        updateTechnicalStatus();
+        updatePermissionStatus();
         if (policyMessage && value.startsWith("Pager policy\n")) {
             policyReceivedThisSession = true;
             policyRefreshMissed = false;
@@ -419,6 +514,11 @@ public final class MainActivity extends Activity {
         long intervalMs = RelayPreferences.mailboxIntervalMs(this);
         long windowMs = RelayPreferences.mailboxWindowMs(this);
         long savedNextWindowMs = RelayPreferences.mailboxNextWindowWallClockMs(this);
+        if ("always".equals(RelayPreferences.pagerAvailability(this))) {
+            learnedMailboxTiming.setText(R.string.mailbox_timing_not_used);
+            updateEnrollmentResetAdvice();
+            return;
+        }
         if (intervalMs <= 0L || windowMs <= 0L || savedNextWindowMs <= 0L) {
             learnedMailboxTiming.setText(R.string.learned_mailbox_timing_unavailable);
             updateEnrollmentResetAdvice();
@@ -432,14 +532,96 @@ public final class MainActivity extends Activity {
         updateEnrollmentResetAdvice();
     }
 
+    private void updatePagerSummary() {
+        if (pagerSummary == null) {
+            return;
+        }
+        String model = RelayPreferences.pagerModel(this);
+        String deviceId = RelayPreferences.pagerDeviceId(this);
+        String device;
+        if (PagerProtocol.isValidDeviceId(deviceId)) {
+            String modelSuffix = "X3".equals(model) || "X4".equals(model) ? " " + model : "";
+            device = "Xteink" + modelSuffix + " · "
+                    + deviceId.substring(deviceId.length() - 6).toUpperCase(java.util.Locale.US);
+        } else {
+            String selectedLabel = RelayPreferences.pagerSelectedLabel(this);
+            device = RelayPreferences.hasPagerSelection(this)
+                    ? (selectedLabel.isEmpty() ? "Selected Xteink · Not confirmed" : selectedLabel + " · Not confirmed")
+                    : "Not selected";
+        }
+
+        String availability = RelayPreferences.pagerAvailability(this);
+        String availabilityText;
+        if ("mailbox".equals(availability)) {
+            availabilityText = PagerProtocol.availabilityLabel(true,
+                    RelayPreferences.pagerPolicyIntervalMs(this));
+        } else if ("always".equals(availability)) {
+            availabilityText = PagerProtocol.availabilityLabel(false, 0L);
+        } else {
+            availabilityText = "Unknown";
+        }
+        long lastSyncMs = RelayPreferences.pagerLastSyncWallClockMs(this);
+        String lastSync = lastSyncMs > 0L
+                ? java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.MEDIUM)
+                        .format(new java.util.Date(lastSyncMs))
+                : "Never";
+        boolean enrollmentReady = RelayPreferences.pagerEnrolled(this) && RelayPreferences.hasPagerIdentity(this);
+        pagerSummary.setText("Device: " + device
+                + "\nEnrollment: " + (enrollmentReady ? "Ready" : "Setup required")
+                + "\nAvailability: " + availabilityText
+                + "\nLast policy refresh: " + lastSync);
+        if (forgetPager != null) {
+            forgetPager.setVisibility(RelayPreferences.hasPagerSelection(this) ? View.VISIBLE : View.GONE);
+        }
+        if (choosePager != null) {
+            choosePager.setText(RelayPreferences.hasPagerSelection(this)
+                    ? R.string.change_xteink
+                    : R.string.choose_xteink);
+        }
+    }
+
+    private void updateTechnicalStatus() {
+        if (technicalStatus == null) {
+            return;
+        }
+        String savedStatus = RelayPreferences.pagerTechnicalStatus(this);
+        technicalStatus.setText(savedStatus.isEmpty() ? getString(R.string.ble_details_unavailable) : savedStatus);
+    }
+
+    private void updatePermissionStatus() {
+        boolean bluetoothReady = hasBluetoothPermissions();
+        if (bluetoothPermissionStatus != null) {
+            bluetoothPermissionStatus.setText(bluetoothReady
+                    ? R.string.bluetooth_access_ready
+                    : R.string.bluetooth_access_required);
+        }
+        if (bluetoothPermissionAction != null) {
+            bluetoothPermissionAction.setVisibility(bluetoothReady ? View.GONE : View.VISIBLE);
+        }
+
+        boolean notificationsReady = hasNotificationAccess();
+        if (notificationPermissionStatus != null) {
+            notificationPermissionStatus.setText(notificationsReady
+                    ? R.string.notification_access_ready
+                    : R.string.notification_access_required_status);
+        }
+        if (notificationPermissionAction != null) {
+            notificationPermissionAction.setVisibility(notificationsReady ? View.GONE : View.VISIBLE);
+        }
+    }
+
     private void updateEnrollmentResetAdvice() {
         if (enrollmentResetAdvice == null) {
             return;
         }
-        boolean timingMissing = RelayPreferences.mailboxIntervalMs(this) <= 0L
+        String availability = RelayPreferences.pagerAvailability(this);
+        boolean policyMissing = availability.isEmpty();
+        boolean timingMissing = "mailbox".equals(availability) && (RelayPreferences.mailboxIntervalMs(this) <= 0L
                 || RelayPreferences.mailboxWindowMs(this) <= 0L
-                || RelayPreferences.mailboxNextWindowWallClockMs(this) <= 0L;
-        boolean visible = !policyReceivedThisSession && (timingMissing || policyRefreshMissed);
+                || RelayPreferences.mailboxNextWindowWallClockMs(this) <= 0L);
+        boolean visible = RelayPreferences.hasPagerSelection(this)
+                && !policyReceivedThisSession
+                && (policyMissing || timingMissing || policyRefreshMissed);
         enrollmentResetAdvice.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
@@ -475,6 +657,9 @@ public final class MainActivity extends Activity {
         }
         if (beatModeSwitch != null) {
             beatModeSwitch.setChecked(RelayPreferences.isBeatEnabled(this));
+        }
+        if (autoUpdatePolicySwitch != null) {
+            autoUpdatePolicySwitch.setChecked(RelayPreferences.isAutoUpdatePagerPolicy(this));
         }
         updatingControlSwitches = false;
     }
@@ -524,6 +709,10 @@ public final class MainActivity extends Activity {
         if (!PagerProtocol.isValidTestPayload(payload)) {
             return;
         }
+        if (!RelayPreferences.isPagerReadyForUse(this)) {
+            status.setText(R.string.refresh_policy_before_relay);
+            return;
+        }
         updateOperationButtons(true, policyRetryActive);
         PagerRelayService.send(this, payload);
     }
@@ -531,6 +720,10 @@ public final class MainActivity extends Activity {
     private void readPagerStatus() {
         if (!hasBluetoothPermissions()) {
             requestBluetoothPermissions();
+            return;
+        }
+        if (!RelayPreferences.hasPagerSelection(this)) {
+            policyStatus.setText(R.string.choose_xteink_before_refresh);
             return;
         }
         policyReceivedThisSession = false;
@@ -544,7 +737,8 @@ public final class MainActivity extends Activity {
         String payload = currentPayload();
         int bytes = PagerProtocol.utf8Length(payload);
         byteCount.setText(getString(R.string.payload_byte_count, bytes, PagerProtocol.MAX_DISPLAY_PAYLOAD_BYTES));
-        send.setEnabled(sendRetryActive || PagerProtocol.isValidTestPayload(payload));
+        send.setEnabled(sendRetryActive
+                || PagerProtocol.isValidTestPayload(payload) && RelayPreferences.isPagerReadyForUse(this));
     }
 
     private void updateOperationButtons(boolean sendActive, boolean policyActive) {
@@ -565,6 +759,109 @@ public final class MainActivity extends Activity {
         return PagerProtocol.testPayload(title == null ? "" : title.getText().toString(),
                 message == null ? "" : message.getText().toString(),
                 footer == null ? "" : footer.getText().toString());
+    }
+
+    private void showDeviceChooser() {
+        if (!hasBluetoothPermissions()) {
+            requestBluetoothPermissions();
+            return;
+        }
+        if (deviceChooserDialog != null) {
+            deviceChooserDialog.dismiss();
+        }
+
+        LinearLayout chooserContent = new LinearLayout(this);
+        chooserContent.setOrientation(LinearLayout.VERTICAL);
+        int padding = dp(16);
+        chooserContent.setPadding(padding, 0, padding, 0);
+        TextView scanStatus = text(getString(R.string.xteink_scan_starting), 14, false);
+        chooserContent.addView(scanStatus);
+        ListView deviceList = new ListView(this);
+        deviceChoiceAdapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, new ArrayList<>());
+        deviceList.setAdapter(deviceChoiceAdapter);
+        chooserContent.addView(deviceList, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(280)));
+
+        deviceScanner = new PagerDeviceScanner(this, new PagerDeviceScanner.Listener() {
+            @Override
+            public void onScanStarted() {
+                scanStatus.setText(R.string.xteink_scan_running);
+            }
+
+            @Override
+            public void onDevicesChanged(List<PagerDeviceScanner.DeviceCandidate> devices) {
+                discoveredDevices.clear();
+                discoveredDevices.addAll(devices);
+                deviceChoiceAdapter.clear();
+                String selectedAddress = RelayPreferences.pagerBluetoothAddress(MainActivity.this);
+                for (PagerDeviceScanner.DeviceCandidate device : devices) {
+                    deviceChoiceAdapter.add(device.displayLabel(device.address.equalsIgnoreCase(selectedAddress)));
+                }
+                deviceChoiceAdapter.notifyDataSetChanged();
+                if (!devices.isEmpty()) {
+                    scanStatus.setText(getResources().getQuantityString(
+                            R.plurals.xteink_devices_found, devices.size(), devices.size()));
+                }
+            }
+
+            @Override
+            public void onScanStopped(String message) {
+                scanStatus.setText(message);
+            }
+        });
+
+        deviceChooserDialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.choose_xteink)
+                .setView(chooserContent)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setNeutralButton(R.string.scan_again, null)
+                .create();
+        deviceChooserDialog.setOnShowListener(dialog -> deviceChooserDialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+                .setOnClickListener(view -> deviceScanner.start()));
+        deviceChooserDialog.setOnDismissListener(dialog -> {
+            if (deviceScanner != null) {
+                deviceScanner.stop();
+            }
+            deviceScanner = null;
+            deviceChooserDialog = null;
+        });
+        deviceList.setOnItemClickListener((parent, view, position, id) -> {
+            if (position >= 0 && position < discoveredDevices.size()) {
+                selectDiscoveredDevice(discoveredDevices.get(position));
+            }
+        });
+        deviceChooserDialog.show();
+        deviceScanner.start();
+    }
+
+    private void selectDiscoveredDevice(PagerDeviceScanner.DeviceCandidate candidate) {
+        String storedAddress = RelayPreferences.pagerBluetoothAddress(this);
+        if (candidate.address.equalsIgnoreCase(storedAddress)) {
+            policyStatus.setText(R.string.xteink_already_selected);
+            deviceChooserDialog.dismiss();
+            return;
+        }
+        if (!BluetoothAdapter.checkBluetoothAddress(storedAddress)) {
+            applySelectedDevice(candidate);
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.change_xteink)
+                .setMessage(R.string.change_xteink_warning)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.change_xteink,
+                        (dialog, which) -> applySelectedDevice(candidate))
+                .show();
+    }
+
+    private void applySelectedDevice(PagerDeviceScanner.DeviceCandidate candidate) {
+        if (deviceChooserDialog != null) {
+            deviceChooserDialog.dismiss();
+        }
+        policyReceivedThisSession = false;
+        policyRefreshMissed = false;
+        PagerRelayService.selectPager(this, candidate.address, candidate.storedLabel());
+        syncControlSwitches();
     }
 
     private void requestBluetoothPermissions() {

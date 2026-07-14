@@ -60,8 +60,11 @@ class HalBlePager {
   size_t takePayload(char* destination, size_t destinationSize);
 
   // Produces a read-only, semicolon-delimited policy/status value for the
-  // companion app. X3 remains the configuration authority.
+  // companion app. Xteink remains the configuration authority.
   size_t copyStatus(char* destination, size_t destinationSize) const;
+
+  // Copies the short model/identity shown during explicit app enrollment.
+  static size_t copySetupLabel(char* destination, size_t destinationSize);
 
   // Consumes the token that completed first-time enrollment. The activity owns
   // persistent settings and saves it outside the BLE callback path.

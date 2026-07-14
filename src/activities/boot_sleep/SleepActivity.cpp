@@ -380,7 +380,14 @@ void SleepActivity::renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) 
 
   renderer.clearScreen();
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_PAGER));
-  if (pagerHasData) {
+  if (SETTINGS.pagerClientEnrolled == 0) {
+    char setupLabel[16] = {};
+    HalBlePager::copySetupLabel(setupLabel, sizeof(setupLabel));
+    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, tr(STR_PAGER_WAITING_ENROLLMENT), true,
+                              EpdFontFamily::BOLD);
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 15, tr(STR_PAGER_SETUP_OPEN));
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 45, setupLabel);
+  } else if (pagerHasData) {
     renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 70, pagerTitle, true, EpdFontFamily::BOLD);
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, pagerMessage);
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 55, pagerFooter);

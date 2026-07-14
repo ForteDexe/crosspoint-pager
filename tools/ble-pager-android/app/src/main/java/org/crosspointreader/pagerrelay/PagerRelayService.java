@@ -19,6 +19,8 @@ public final class PagerRelayService extends Service {
     static final String ACTION_RESUME_ENABLED_MODES = "org.crosspointreader.pagerrelay.RESUME_ENABLED_MODES";
     static final String ACTION_CANCEL_SEND = "org.crosspointreader.pagerrelay.CANCEL_SEND";
     static final String ACTION_CANCEL_POLICY_READ = "org.crosspointreader.pagerrelay.CANCEL_POLICY_READ";
+    static final String ACTION_FORGET_PAGER = "org.crosspointreader.pagerrelay.FORGET_PAGER";
+    static final String ACTION_SELECT_PAGER = "org.crosspointreader.pagerrelay.SELECT_PAGER";
     static final String ACTION_STATUS = "org.crosspointreader.pagerrelay.STATUS";
     static final String EXTRA_PAYLOAD = "payload";
     static final String EXTRA_STATUS = "status";
@@ -27,6 +29,8 @@ public final class PagerRelayService extends Service {
     static final String EXTRA_SEND_RETRY_ACTIVE = "send_retry_active";
     static final String EXTRA_POLICY_RETRY_ACTIVE = "policy_retry_active";
     static final String EXTRA_POLICY_STATUS = "policy_status";
+    private static final String EXTRA_DEVICE_ADDRESS = "device_address";
+    private static final String EXTRA_DEVICE_LABEL = "device_label";
     private static final String CHANNEL_ID = "pager_relay";
     private static final int FOREGROUND_NOTIFICATION_ID = 101;
 
@@ -60,6 +64,21 @@ public final class PagerRelayService extends Service {
     static void cancelPolicyRead(Context context) {
         context.startForegroundService(new Intent(context, PagerRelayService.class)
                 .setAction(ACTION_CANCEL_POLICY_READ));
+    }
+
+    static void forgetPager(Context context) {
+        RelayPreferences.setEnabled(context, false);
+        RelayPreferences.setBeatEnabled(context, false);
+        context.startForegroundService(new Intent(context, PagerRelayService.class).setAction(ACTION_FORGET_PAGER));
+    }
+
+    static void selectPager(Context context, String address, String label) {
+        RelayPreferences.setEnabled(context, false);
+        RelayPreferences.setBeatEnabled(context, false);
+        context.startForegroundService(new Intent(context, PagerRelayService.class)
+                .setAction(ACTION_SELECT_PAGER)
+                .putExtra(EXTRA_DEVICE_ADDRESS, address)
+                .putExtra(EXTRA_DEVICE_LABEL, label));
     }
 
     static void applyConnectionMode(Context context) {
@@ -121,6 +140,11 @@ public final class PagerRelayService extends Service {
             client.cancelSend();
         } else if (ACTION_CANCEL_POLICY_READ.equals(action)) {
             client.cancelPolicyRead();
+        } else if (ACTION_FORGET_PAGER.equals(action)) {
+            client.forgetPager();
+        } else if (ACTION_SELECT_PAGER.equals(action)) {
+            client.selectPager(intent.getStringExtra(EXTRA_DEVICE_ADDRESS),
+                    intent.getStringExtra(EXTRA_DEVICE_LABEL));
         } else if (ACTION_APPLY_CONNECTION_MODE.equals(action)) {
             if (shouldHoldRelayConnection()) {
                 client.holdConnection();

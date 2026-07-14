@@ -17,6 +17,16 @@ final class RelayPreferences {
     private static final String SEND_RETRY_ACTIVE = "send_retry_active";
     private static final String POLICY_RETRY_ACTIVE = "policy_retry_active";
     private static final String CLIENT_TOKEN = "client_token";
+    private static final String PAGER_MODEL = "pager_model";
+    private static final String PAGER_DEVICE_ID = "pager_device_id";
+    private static final String PAGER_BLUETOOTH_ADDRESS = "pager_bluetooth_address";
+    private static final String PAGER_SELECTED_LABEL = "pager_selected_label";
+    private static final String PAGER_ENROLLED = "pager_enrolled";
+    private static final String PAGER_AVAILABILITY = "pager_availability";
+    private static final String PAGER_POLICY_INTERVAL_MS = "pager_policy_interval_ms";
+    private static final String PAGER_LAST_SYNC_WALL_CLOCK_MS = "pager_last_sync_wall_clock_ms";
+    private static final String PAGER_TECHNICAL_STATUS = "pager_technical_status";
+    private static final String AUTO_UPDATE_PAGER_POLICY = "auto_update_pager_policy";
 
     private RelayPreferences() {}
 
@@ -118,5 +128,121 @@ final class RelayPreferences {
 
     static void clearClientToken(Context context) {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().remove(CLIENT_TOKEN).apply();
+    }
+
+    static void setPagerPolicy(Context context, PagerProtocol.PagerStatus status, String technicalStatus) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(PAGER_ENROLLED, status.enrolled)
+                .putString(PAGER_AVAILABILITY, status.configuredMailbox ? "mailbox" : "always")
+                .putLong(PAGER_POLICY_INTERVAL_MS, status.intervalMs)
+                .putLong(PAGER_LAST_SYNC_WALL_CLOCK_MS, System.currentTimeMillis())
+                .putString(PAGER_TECHNICAL_STATUS, technicalStatus)
+                .apply();
+    }
+
+    static void setPagerIdentity(Context context, PagerProtocol.PagerStatus status, String bluetoothAddress) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .putString(PAGER_MODEL, status.model)
+                .putString(PAGER_DEVICE_ID, status.deviceId)
+                .putString(PAGER_BLUETOOTH_ADDRESS, bluetoothAddress)
+                .putBoolean(PAGER_ENROLLED, true)
+                .apply();
+    }
+
+    static void selectPager(Context context, String bluetoothAddress, String selectedLabel) {
+        SharedPreferences.Editor editor = clearedPagerEditor(context)
+                .putString(PAGER_BLUETOOTH_ADDRESS, bluetoothAddress)
+                .putString(PAGER_SELECTED_LABEL, selectedLabel == null ? "" : selectedLabel);
+        editor.apply();
+    }
+
+    static String pagerModel(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(PAGER_MODEL, "");
+    }
+
+    static String pagerDeviceId(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(PAGER_DEVICE_ID, "");
+    }
+
+    static String pagerBluetoothAddress(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(PAGER_BLUETOOTH_ADDRESS, "");
+    }
+
+    static String pagerSelectedLabel(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(PAGER_SELECTED_LABEL, "");
+    }
+
+    static boolean pagerEnrolled(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getBoolean(PAGER_ENROLLED, false);
+    }
+
+    static String pagerAvailability(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(PAGER_AVAILABILITY, "");
+    }
+
+    static long pagerPolicyIntervalMs(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getLong(PAGER_POLICY_INTERVAL_MS, 0L);
+    }
+
+    static long pagerLastSyncWallClockMs(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getLong(PAGER_LAST_SYNC_WALL_CLOCK_MS, 0L);
+    }
+
+    static String pagerTechnicalStatus(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(PAGER_TECHNICAL_STATUS, "");
+    }
+
+    static boolean hasPagerIdentity(Context context) {
+        return PagerProtocol.isValidDeviceId(pagerDeviceId(context))
+                && android.bluetooth.BluetoothAdapter.checkBluetoothAddress(pagerBluetoothAddress(context));
+    }
+
+    static boolean hasPagerSelection(Context context) {
+        return android.bluetooth.BluetoothAdapter.checkBluetoothAddress(pagerBluetoothAddress(context));
+    }
+
+    static boolean isAutoUpdatePagerPolicy(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getBoolean(AUTO_UPDATE_PAGER_POLICY, false);
+    }
+
+    static void setAutoUpdatePagerPolicy(Context context, boolean enabled) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(AUTO_UPDATE_PAGER_POLICY, enabled).apply();
+    }
+
+    static boolean isPagerReadyForUse(Context context) {
+        if (!hasPagerIdentity(context) || !PagerProtocol.isValidClientToken(clientToken(context))
+                || !pagerEnrolled(context)) {
+            return false;
+        }
+        String availability = pagerAvailability(context);
+        if ("always".equals(availability)) {
+            return true;
+        }
+        return "mailbox".equals(availability)
+                && mailboxIntervalMs(context) > 0L
+                && mailboxWindowMs(context) > 0L
+                && mailboxNextWindowWallClockMs(context) > 0L;
+    }
+
+    static void forgetPager(Context context) {
+        clearedPagerEditor(context).apply();
+    }
+
+    private static SharedPreferences.Editor clearedPagerEditor(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .remove(CLIENT_TOKEN)
+                .remove(PAGER_MODEL)
+                .remove(PAGER_DEVICE_ID)
+                .remove(PAGER_BLUETOOTH_ADDRESS)
+                .remove(PAGER_SELECTED_LABEL)
+                .remove(PAGER_ENROLLED)
+                .remove(PAGER_AVAILABILITY)
+                .remove(PAGER_POLICY_INTERVAL_MS)
+                .remove(PAGER_LAST_SYNC_WALL_CLOCK_MS)
+                .remove(PAGER_TECHNICAL_STATUS)
+                .remove(MAILBOX_INTERVAL_MS)
+                .remove(MAILBOX_WINDOW_MS)
+                .remove(MAILBOX_NEXT_WINDOW_WALL_CLOCK_MS);
     }
 }

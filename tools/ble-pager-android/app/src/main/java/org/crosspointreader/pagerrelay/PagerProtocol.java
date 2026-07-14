@@ -19,6 +19,10 @@ final class PagerProtocol {
         return clean(title) + "\n" + clean(message) + "\n" + clean(footer);
     }
 
+    static String policyConfirmationPayload() {
+        return testPayload("connected or enrolled", "", "");
+    }
+
     static String notificationPayload(String title, String message, String footer) {
         String safeTitle = truncateUtf8(clean(title), 96);
         String safeFooter = truncateUtf8(clean(footer), 48);
@@ -41,11 +45,19 @@ final class PagerProtocol {
     }
 
     static boolean isValidClientToken(String token) {
-        if (token == null || token.length() != CLIENT_TOKEN_BYTES) {
+        return isHexValue(token, CLIENT_TOKEN_BYTES);
+    }
+
+    static boolean isValidDeviceId(String deviceId) {
+        return isHexValue(deviceId, 12);
+    }
+
+    private static boolean isHexValue(String value, int expectedLength) {
+        if (value == null || value.length() != expectedLength) {
             return false;
         }
-        for (int index = 0; index < CLIENT_TOKEN_BYTES; index++) {
-            char character = token.charAt(index);
+        for (int index = 0; index < expectedLength; index++) {
+            char character = value.charAt(index);
             if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')
                     || (character >= 'A' && character <= 'F'))) {
                 return false;
@@ -70,7 +82,8 @@ final class PagerProtocol {
         if (configuredAvailability.isEmpty()) {
             configuredAvailability = availability;
         }
-        return new PagerStatus("mailbox".equals(availability), "mailbox".equals(configuredAvailability),
+        return new PagerStatus(fields.value("model"), fields.value("device_id"),
+                "mailbox".equals(availability), "mailbox".equals(configuredAvailability),
                 "1".equals(fields.value("enrolled")),
                 fields.longValue("interval_s") * 1000L,
                 fields.longValue("window_ms"),
@@ -83,9 +96,11 @@ final class PagerProtocol {
 
     static String formatStatus(String rawStatus) {
         StatusFields status = StatusFields.parse(rawStatus);
+        PagerStatus pagerStatus = parseStatus(rawStatus);
         int intervalSeconds = status.intValue("interval_s");
         double windowSeconds = status.intValue("window_ms") / 1000.0;
-        String availability = "always".equals(status.value("availability"))
+        String effectiveAvailabilityValue = status.value("availability");
+        String effectiveAvailability = "always".equals(effectiveAvailabilityValue)
                 ? "Always Available"
                 : "Every " + formatNumber(intervalSeconds / 60.0) + " min ("
                 + formatNumber(windowSeconds) + " s receive window)";
@@ -98,27 +113,34 @@ final class PagerProtocol {
                 : "Every " + formatNumber(intervalSeconds / 60.0) + " min";
 
         StringBuilder result = new StringBuilder()
-                .append("Enrollment: ").append("1".equals(status.value("enrolled")) ? "enrolled" : "setup open")
-                .append("\nEffective availability: ").append(availability);
+                .append("Device: ").append(deviceLabel(pagerStatus))
+                .append("\nEnrollment: ").append("1".equals(status.value("enrolled")) ? "enrolled" : "setup open")
+                .append("\nAvailability: ").append(configuredAvailability);
+        if (!configuredAvailabilityValue.equals(effectiveAvailabilityValue)) {
+            result.append("\nEnrollment access: temporarily ").append(effectiveAvailability);
+        }
         String profile = status.value("profile");
-        if ("always".equals(status.value("availability")) && !profile.isEmpty()) {
+        if ("always".equals(configuredAvailabilityValue) && !profile.isEmpty()) {
             result.append("\nAlways available profile: ").append(titleCaseProfile(profile));
         }
-        result.append("\nBLE link: ").append("1".equals(status.value("connected")) ? "connected" : "not connected");
-        if (!configuredAvailabilityValue.equals(status.value("availability"))) {
-            result.append("\nConfigured availability: ").append(configuredAvailability);
-        }
-
-        String lastWrite = status.value("last_write");
-        if (!lastWrite.isEmpty() && !"none".equals(lastWrite)) {
-            result.append("\nLast write: ").append(lastWrite);
-        }
-
         int nextWindowMs = status.intValue("next_window_ms");
-        if (!"always".equals(status.value("availability")) && nextWindowMs > 0) {
+        if (!"always".equals(effectiveAvailabilityValue) && nextWindowMs > 0) {
             result.append("\nNext receive window: ")
                     .append(formatNumber(nextWindowMs / 1000.0))
                     .append(" s");
+        }
+
+        return result.toString();
+    }
+
+    static String formatTechnicalStatus(String rawStatus) {
+        StatusFields status = StatusFields.parse(rawStatus);
+        StringBuilder result = new StringBuilder()
+                .append("Protocol: v").append(status.value("v"))
+                .append("\nBLE link: ").append("1".equals(status.value("connected")) ? "connected" : "not connected");
+        String lastWrite = status.value("last_write");
+        if (!lastWrite.isEmpty() && !"none".equals(lastWrite)) {
+            result.append("\nLast write: ").append(lastWrite);
         }
 
         int intervalUnits = status.intValue("conn_interval_units");
@@ -138,6 +160,29 @@ final class PagerProtocol {
         }
 
         return result.toString();
+    }
+
+    static boolean wasLastWriteAccepted(String rawStatus) {
+        String lastWrite = StatusFields.parse(rawStatus).value("last_write");
+        return "accepted".equals(lastWrite) || "enrolled".equals(lastWrite);
+    }
+
+    static String deviceLabel(PagerStatus status) {
+        String model = "X3".equals(status.model) || "X4".equals(status.model) ? " " + status.model : "";
+        if (!isValidDeviceId(status.deviceId)) {
+            return "Xteink" + model;
+        }
+        return "Xteink" + model + " · " + status.deviceId.substring(status.deviceId.length() - 6).toUpperCase();
+    }
+
+    static String availabilityLabel(boolean configuredMailbox, long intervalMs) {
+        if (!configuredMailbox) {
+            return "Always Available";
+        }
+        if (intervalMs <= 0L) {
+            return "Periodic";
+        }
+        return "Every " + formatNumber(intervalMs / 60_000.0) + " min";
     }
 
     private static String clean(String value) {
@@ -188,6 +233,8 @@ final class PagerProtocol {
     }
 
     static final class PagerStatus {
+        final String model;
+        final String deviceId;
         final boolean mailbox;
         final boolean configuredMailbox;
         final boolean enrolled;
@@ -195,8 +242,10 @@ final class PagerProtocol {
         final long windowMs;
         final long nextWindowMs;
 
-        PagerStatus(boolean mailbox, boolean configuredMailbox, boolean enrolled, long intervalMs, long windowMs,
-                    long nextWindowMs) {
+        PagerStatus(String model, String deviceId, boolean mailbox, boolean configuredMailbox, boolean enrolled,
+                    long intervalMs, long windowMs, long nextWindowMs) {
+            this.model = model;
+            this.deviceId = deviceId;
             this.mailbox = mailbox;
             this.configuredMailbox = configuredMailbox;
             this.enrolled = enrolled;

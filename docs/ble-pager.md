@@ -83,6 +83,15 @@ flow. To invalidate old clients, use **Settings → System →
 Pager → Enrolled Device → Reset**; the next Pager session creates a new setup
 token.
 
+While setup is open, the Pager screen shows **Waiting for enrollment** instead
+of the normal standby text, plus the same X3/X4 short identity included in its
+BLE scan-response name. This lets the Android companion show a foreground
+device chooser when multiple CrossPoint Pager readers are nearby without
+connecting to each candidate. In the Android companion, **Refresh pager policy**
+shows the configured Availability as the main policy, labels temporary setup
+access separately, stores the setup token, and sends a **connected or enrolled**
+title to complete enrollment.
+
 Changing **Availability** or **Always Available Profile** also resets the
 enrolled device and invalidates its token. This deliberately reopens setup so
 the phone can read the new policy before enrolling again.
@@ -101,16 +110,26 @@ these values are preferences rather than guaranteed final timing. Mailbox mode
 does not request this profile: its short connection races to deliver a payload
 and disconnect. The read-only status characteristic exposes X3's policy and
 the latest negotiated link values as semicolon-separated `key=value` text. Its
-keys are `v`,
+keys are `v`, `model`, `device_id`,
 `availability` (effective radio behavior), `configured_availability`,
 `interval_s`, `window_ms`, `connected`, `enrolled`, `enroll_token` (only
 populated while setup is open), `last_write`,
 `conn_interval_units` (1.25 ms units), `conn_latency`, `conn_timeout_units`
 (10 ms units), and `next_window_ms`. The `profile` key is present only while
 effective availability is Always Available. Clients can read the schedule and
-link state, but cannot change the battery policy. Status version 3 separates the
-Always Available enrollment session from its configured periodic policy so a
-client can prepare its first mailbox scan before X3 completes the handoff.
+link state, but cannot change the battery policy. Status version 4 retains the
+effective/configured availability split and adds the detected X3/X4 model plus
+a stable 12-hex hardware identity. The Android companion stores that identity
+and the observed BLE address only after it verifies an authenticated write, then
+targets the same reader on later scans.
+
+The Android companion keeps only one selected Xteink. Choosing another address
+stops its active relay/diagnostic modes and clears the previous identity, token,
+policy, and mailbox schedule. By default, only manual **Refresh pager policy**
+updates that stored status or performs enrollment. The optional **Auto update
+pager policy** switch permits successful sends and Beat reads from the already
+selected reader to refresh the stored snapshot; it does not select devices,
+enroll a new reader, or start independent polling.
 
 Periodic availability is still not true deep sleep: the X3 battery latch stays powered so the
 MCU can return from timer light sleep without rebooting. Current must still be

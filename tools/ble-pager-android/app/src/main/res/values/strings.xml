@@ -11,14 +11,32 @@
     <string name="debug_collapsed">Debug ▸</string>
     <string name="debug_expanded">Debug ▾</string>
     <string name="clear_log">Clear log</string>
-    <string name="learned_mailbox_timing_unavailable">Not learned yet. Pending updates retry every 30 seconds until Xteink is reached.</string>
+    <string name="learned_mailbox_timing_unavailable">Not stored yet. Choose an Xteink and refresh Pager policy before sending.</string>
     <string name="learned_mailbox_timing_summary">Interval: %1$s\nReceive window: %2$s\nNext estimated window: %3$s</string>
     <string name="pager_enrollment_reset_advice">Cannot confirm the current Pager policy. On Xteink, select Settings → System → Pager → Enrolled Device → Reset, re-enter Pager standby, then refresh again.</string>
     <string name="duration_milliseconds">%1$d ms</string>
     <string name="send_pager_update">Send pager update</string>
     <string name="stop_pager_update_retry">Stop pager update retry</string>
     <string name="refresh_pager_policy">Refresh pager policy</string>
-    <string name="stop_policy_retry">Stop policy retry</string>
+    <string name="stop_policy_retry">Stop policy refresh</string>
+    <string name="choose_xteink">Choose Xteink</string>
+    <string name="change_xteink">Change Xteink</string>
+    <string name="scan_again">Scan again</string>
+    <string name="xteink_scan_starting">Preparing Bluetooth scan…</string>
+    <string name="xteink_scan_running">Scanning for nearby CrossPoint Pager devices…</string>
+    <string name="xteink_already_selected">This Xteink is already selected.</string>
+    <string name="change_xteink_warning">Changing Xteink stops the relay and clears the current enrollment token, Pager status, and stored mailbox timing. Continue?</string>
+    <string name="auto_update_pager_policy">Auto update pager policy</string>
+    <string name="auto_update_pager_policy_summary">Off by default. When enabled, successful sends and Beat checks may update Pager status for the selected Xteink. It never selects or enrolls another device.</string>
+    <string name="choose_xteink_before_refresh">Choose an Xteink before refreshing Pager policy.</string>
+    <string name="refresh_policy_before_relay">Choose an Xteink and refresh Pager policy before sending, relaying notifications, or using Beat mode.</string>
+    <string name="forget_stored_xteink">Forget stored Xteink</string>
+    <string name="bluetooth_access_ready">Bluetooth access: Ready</string>
+    <string name="bluetooth_access_required">Bluetooth access: Action required</string>
+    <string name="notification_access_ready">Notification access: Ready</string>
+    <string name="notification_access_required_status">Notification access: Action required</string>
+    <string name="mailbox_timing_not_used">Not used while Availability is Always Available.</string>
+    <string name="ble_details_unavailable">No BLE link details stored yet.</string>
     <string name="test_mode_connect_per_message">Test send mode: Connect per message. The app disconnects after delivery.</string>
     <string name="test_mode_keep_connected">Test send mode: Keep connected while relay is active. A test send simulates this mode by leaving the BLE link open after delivery; select Connect per message to disconnect it.</string>
     <plurals name="duration_minutes">
@@ -28,6 +46,10 @@
     <plurals name="duration_seconds">
         <item quantity="one">%1$d second</item>
         <item quantity="other">%1$d seconds</item>
+    </plurals>
+    <plurals name="xteink_devices_found">
+        <item quantity="one">%1$d CrossPoint Pager found. Select the code shown on the Xteink screen.</item>
+        <item quantity="other">%1$d CrossPoint Pagers found. Select the code shown on the Xteink screen.</item>
     </plurals>
     <string name="status_countdown">%1$s %2$s</string>
 </resources>
