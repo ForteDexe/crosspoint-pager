@@ -12,6 +12,8 @@ public final class PagerRelayService extends Service {
     static final String ACTION_START_RELAY = "org.crosspointreader.pagerrelay.START_RELAY";
     static final String ACTION_STOP_RELAY = "org.crosspointreader.pagerrelay.STOP_RELAY";
     static final String ACTION_SEND = "org.crosspointreader.pagerrelay.SEND";
+    static final String ACTION_READ_STATUS = "org.crosspointreader.pagerrelay.READ_STATUS";
+    static final String ACTION_APPLY_CONNECTION_MODE = "org.crosspointreader.pagerrelay.APPLY_CONNECTION_MODE";
     static final String ACTION_STATUS = "org.crosspointreader.pagerrelay.STATUS";
     static final String EXTRA_PAYLOAD = "payload";
     static final String EXTRA_STATUS = "status";
@@ -37,6 +39,14 @@ public final class PagerRelayService extends Service {
         context.startForegroundService(intent);
     }
 
+    static void readStatus(Context context) {
+        context.startForegroundService(new Intent(context, PagerRelayService.class).setAction(ACTION_READ_STATUS));
+    }
+
+    static void applyConnectionMode(Context context) {
+        context.startForegroundService(new Intent(context, PagerRelayService.class).setAction(ACTION_APPLY_CONNECTION_MODE));
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -49,9 +59,11 @@ public final class PagerRelayService extends Service {
         startForeground(FOREGROUND_NOTIFICATION_ID, foregroundNotification());
         String action = intent == null ? ACTION_START_RELAY : intent.getAction();
         if (ACTION_STOP_RELAY.equals(action)) {
+            client.setKeepConnected(false);
             stopSelf();
             return START_NOT_STICKY;
         }
+        configureConnectionMode();
         if (ACTION_SEND.equals(action)) {
             String payload = intent.getStringExtra(EXTRA_PAYLOAD);
             if (payload != null && PagerProtocol.utf8Length(payload) <= PagerProtocol.MAX_PAYLOAD_BYTES) {
@@ -59,8 +71,20 @@ public final class PagerRelayService extends Service {
             } else {
                 publishStatus("Pager payload is invalid.");
             }
+        } else if (ACTION_READ_STATUS.equals(action)) {
+            client.readStatus();
+        } else if (ACTION_APPLY_CONNECTION_MODE.equals(action)) {
+            if (shouldKeepConnection()) {
+                client.holdConnection();
+            } else {
+                publishStatus("Connection mode: connect per message.");
+            }
         } else {
-            publishStatus(RelayPreferences.isEnabled(this) ? "Pager relay is ready." : "Pager test sender is ready.");
+            if (shouldKeepConnection()) {
+                client.holdConnection();
+            } else {
+                publishStatus(RelayPreferences.isEnabled(this) ? "Pager relay is ready." : "Pager test sender is ready.");
+            }
         }
         return RelayPreferences.isEnabled(this) ? START_STICKY : START_NOT_STICKY;
     }
@@ -93,5 +117,13 @@ public final class PagerRelayService extends Service {
 
     private void publishStatus(String status) {
         sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()).putExtra(EXTRA_STATUS, status));
+    }
+
+    private void configureConnectionMode() {
+        client.setKeepConnected(shouldKeepConnection());
+    }
+
+    private boolean shouldKeepConnection() {
+        return RelayPreferences.isEnabled(this) && RelayPreferences.shouldKeepConnected(this);
     }
 }

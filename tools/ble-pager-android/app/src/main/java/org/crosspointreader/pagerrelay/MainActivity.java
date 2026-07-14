@@ -22,6 +22,8 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -88,6 +90,12 @@ public final class MainActivity extends Activity {
         notificationAccess.setOnClickListener(view -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
         content.addView(notificationAccess);
 
+        TextView connectionHeading = text("Connection mode", 20, true);
+        connectionHeading.setPadding(0, dp(16), 0, 0);
+        content.addView(connectionHeading);
+        content.addView(text("Use Keep connected only with X3 Always Available mode when measuring advertising idle versus connected idle.", 15, false));
+        content.addView(connectionModePicker());
+
         Button startRelay = button("Start notification relay");
         startRelay.setOnClickListener(view -> {
             if (!hasBluetoothPermissions()) {
@@ -110,7 +118,11 @@ public final class MainActivity extends Activity {
         TextView testHeading = text("Test page", 20, true);
         testHeading.setPadding(0, dp(16), 0, 0);
         content.addView(testHeading);
-        content.addView(text("This uses the same title, message, footer payload as tools/ble-pager-test.", 15, false));
+        content.addView(text("This uses the same title, message, footer payload and policy read as tools/ble-pager-test.", 15, false));
+
+        Button refreshPolicy = button("Refresh pager policy");
+        refreshPolicy.setOnClickListener(view -> readPagerStatus());
+        content.addView(refreshPolicy);
 
         title = field("Title", false);
         message = field("Message", true);
@@ -144,6 +156,31 @@ public final class MainActivity extends Activity {
         return scrollView;
     }
 
+    private RadioGroup connectionModePicker() {
+        RadioGroup group = new RadioGroup(this);
+        group.setOrientation(RadioGroup.VERTICAL);
+        group.setPadding(0, 0, 0, dp(8));
+
+        RadioButton connectPerMessage = radioButton("Connect per message");
+        RadioButton keepConnected = radioButton("Keep connected while relay is active");
+        group.addView(connectPerMessage);
+        group.addView(keepConnected);
+        group.check(RelayPreferences.shouldKeepConnected(this) ? keepConnected.getId() : connectPerMessage.getId());
+        group.setOnCheckedChangeListener((view, checkedId) -> {
+            boolean shouldKeepConnected = checkedId == keepConnected.getId();
+            RelayPreferences.setKeepConnected(this, shouldKeepConnected);
+            if (status != null) {
+                status.setText(shouldKeepConnected
+                        ? "Keep-connected mode will hold the BLE link after Start notification relay."
+                        : "Connection mode: connect per message.");
+            }
+            if (RelayPreferences.isEnabled(this) && hasBluetoothPermissions()) {
+                PagerRelayService.applyConnectionMode(this);
+            }
+        });
+        return group;
+    }
+
     private void sendTestPayload() {
         if (!hasBluetoothPermissions()) {
             requestBluetoothPermissions();
@@ -154,6 +191,14 @@ public final class MainActivity extends Activity {
             return;
         }
         PagerRelayService.send(this, payload);
+    }
+
+    private void readPagerStatus() {
+        if (!hasBluetoothPermissions()) {
+            requestBluetoothPermissions();
+            return;
+        }
+        PagerRelayService.readStatus(this);
     }
 
     private void updatePayloadState() {
@@ -224,6 +269,14 @@ public final class MainActivity extends Activity {
         button.setText(label);
         button.setAllCaps(false);
         button.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return button;
+    }
+
+    private RadioButton radioButton(String label) {
+        RadioButton button = new RadioButton(this);
+        button.setId(View.generateViewId());
+        button.setText(label);
+        button.setTextSize(16);
         return button;
     }
 
