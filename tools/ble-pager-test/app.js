@@ -75,7 +75,7 @@ function renderPolicy(rawStatus) {
 
   const details = [
     `Availability: ${availability}`,
-    `Normal power profile: ${titleCaseProfile(status.profile)}`,
+    `Always available profile: ${titleCaseProfile(status.profile)}`,
     `BLE link: ${status.connected === "1" ? "connected" : "not connected"}`,
   ];
 

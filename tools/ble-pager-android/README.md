@@ -31,7 +31,7 @@ Notification delivery preserves the title and source-app footer, truncating the
 message at UTF-8 character boundaries when necessary.
 
 The policy/status read is device-owned and read-only. It reports availability,
-receive-window timing, normal power profile, and the latest BLE link timing.
+receive-window timing, Always Available profile, and the latest BLE link timing.
 The Android relay still writes notifications directly after connecting so
 periodic availability windows are not spent on a status read.
 

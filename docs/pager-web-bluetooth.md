@@ -54,7 +54,7 @@ and select `.pio\build\pager_power\firmware.bin`.
 2. In **Settings → System → Pager → Availability**, choose **Always Available**
    for continuously available PC debugging, or **Every 1/5/15/30/60 min** for
    timer-based delivery. The default periodic interval is 5 minutes. The
-   separate **Normal Power Profile** chooses Responsive, Balanced, or Battery
+   separate **Always Available Profile** chooses Responsive, Balanced, or Battery
    Saver link preferences when Availability is Always Available.
 3. For a visible e-ink update, choose **Settings → Display → Sleep Screen →
    Pager**, then put the device into sleep/Pager standby.
@@ -81,7 +81,7 @@ secure context such as `localhost` or HTTPS.
 
 1. Select **Connect Bluetooth** in the browser page.
 2. In the browser's device chooser, select **CrossPoint Pager**.
-3. Check **X3 Pager policy** to see the device's Availability, Normal power
+3. Check **X3 Pager policy** to see the device's Availability, Always Available
    profile, and latest negotiated BLE link timing. Select **Refresh** after the
    connection settles if you want to reread it.
 4. Enter a title, message, and footer, then select **Send pager update**.

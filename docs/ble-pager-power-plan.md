@@ -99,7 +99,7 @@ three seconds. Mailbox advertises every 100 ms at -6 dBm and omits the optional
 scan-response name. Always Available retains the readable name and continuous
 radio for development.
 
-For Always Available, **Normal Power Profile** makes X3 request one of three
+For Always Available, **Always Available Profile** makes X3 request one of three
 BLE link policies: Responsive (30–50 ms, latency 0, 4 s timeout), Balanced
 (100–150 ms, latency 2, 6 s timeout), or Battery Saver (200–300 ms, latency 4,
 10 s timeout). The central remains responsible for the negotiated result. X3's

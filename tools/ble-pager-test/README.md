@@ -32,7 +32,7 @@ Pager standby, select **Settings → System → Pager**:
   windows (5 minutes is the default). X3 advertises for two seconds, accepts a
   valid payload, acknowledges its GATT write, then closes the connection after
   250 ms. An idle client is closed after three seconds.
-- **Normal Power Profile** selects Responsive, Balanced, or Battery Saver BLE
+- **Always Available Profile** selects Responsive, Balanced, or Battery Saver BLE
   connection preferences for Always Available. The central may adjust the
   requested parameters.
 

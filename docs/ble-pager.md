@@ -69,7 +69,7 @@ one delivery setting:
   scan-response device name to avoid another radio response; clients must
   filter by the Pager service UUID.
 
-**Normal Power Profile** controls only the BLE link used by **Always
+**Always Available Profile** controls only the BLE link used by **Always
 Available**. X3 requests these connection parameters after a client connects:
 
 | Profile | Requested interval | Peripheral latency | Supervision timeout |

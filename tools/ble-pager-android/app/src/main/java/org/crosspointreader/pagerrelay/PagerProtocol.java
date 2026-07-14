@@ -41,7 +41,7 @@ final class PagerProtocol {
 
         StringBuilder result = new StringBuilder()
                 .append("Availability: ").append(availability)
-                .append("\nNormal power profile: ").append(titleCaseProfile(status.value("profile")))
+                .append("\nAlways available profile: ").append(titleCaseProfile(status.value("profile")))
                 .append("\nBLE link: ").append("1".equals(status.value("connected")) ? "connected" : "not connected");
 
         int nextWindowMs = status.intValue("next_window_ms");
