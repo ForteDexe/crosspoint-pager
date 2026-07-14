@@ -46,6 +46,7 @@ public final class MainActivity extends Activity {
     private TextView policyStatus;
     private TextView statusLog;
     private TextView learnedMailboxTiming;
+    private TextView enrollmentResetAdvice;
     private TextView testConnectionMode;
     private Button send;
     private Button refreshPolicy;
@@ -56,6 +57,8 @@ public final class MainActivity extends Activity {
     private boolean updatingControlSwitches;
     private boolean sendRetryActive;
     private boolean policyRetryActive;
+    private boolean policyRefreshMissed;
+    private boolean policyReceivedThisSession;
     private final Handler countdownHandler = new Handler(Looper.getMainLooper());
     private String sendCountdownPrefix;
     private long sendCountdownAtMs;
@@ -221,6 +224,9 @@ public final class MainActivity extends Activity {
         policyStatus = text("Policy refresh is idle.", 15, false);
         policyStatus.setPadding(0, dp(8), 0, 0);
         debugContent.addView(policyStatus);
+        enrollmentResetAdvice = text(getString(R.string.pager_enrollment_reset_advice), 14, false);
+        enrollmentResetAdvice.setPadding(0, dp(8), 0, 0);
+        debugContent.addView(enrollmentResetAdvice);
         updateLearnedMailboxTiming();
 
         TextView testHeading = text("Test page", 20, true);
@@ -307,6 +313,14 @@ public final class MainActivity extends Activity {
             return;
         }
         updateLearnedMailboxTiming();
+        if (policyMessage && value.startsWith("Pager policy\n")) {
+            policyReceivedThisSession = true;
+            policyRefreshMissed = false;
+        } else if (policyMessage && value.contains("Continuing policy scan.")) {
+            policyReceivedThisSession = false;
+            policyRefreshMissed = true;
+        }
+        updateEnrollmentResetAdvice();
         if (targetCountdownAtMs > 0L) {
             startCountdown(value, targetCountdownAtMs, policyMessage);
             return;
@@ -407,6 +421,7 @@ public final class MainActivity extends Activity {
         long savedNextWindowMs = RelayPreferences.mailboxNextWindowWallClockMs(this);
         if (intervalMs <= 0L || windowMs <= 0L || savedNextWindowMs <= 0L) {
             learnedMailboxTiming.setText(R.string.learned_mailbox_timing_unavailable);
+            updateEnrollmentResetAdvice();
             return;
         }
         long nextWindowMs = nextExpectedWindowWallClockMs(intervalMs, windowMs, savedNextWindowMs);
@@ -414,6 +429,18 @@ public final class MainActivity extends Activity {
                 .format(new java.util.Date(nextWindowMs));
         learnedMailboxTiming.setText(getString(R.string.learned_mailbox_timing_summary,
                 durationText(intervalMs), durationText(windowMs), nextWindow));
+        updateEnrollmentResetAdvice();
+    }
+
+    private void updateEnrollmentResetAdvice() {
+        if (enrollmentResetAdvice == null) {
+            return;
+        }
+        boolean timingMissing = RelayPreferences.mailboxIntervalMs(this) <= 0L
+                || RelayPreferences.mailboxWindowMs(this) <= 0L
+                || RelayPreferences.mailboxNextWindowWallClockMs(this) <= 0L;
+        boolean visible = !policyReceivedThisSession && (timingMissing || policyRefreshMissed);
+        enrollmentResetAdvice.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
     private long nextExpectedWindowWallClockMs(long intervalMs, long windowMs, long savedNextWindowMs) {
@@ -506,6 +533,9 @@ public final class MainActivity extends Activity {
             requestBluetoothPermissions();
             return;
         }
+        policyReceivedThisSession = false;
+        policyRefreshMissed = false;
+        updateEnrollmentResetAdvice();
         updateOperationButtons(sendRetryActive, true);
         PagerRelayService.readStatus(this);
     }

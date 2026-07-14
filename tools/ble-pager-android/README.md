@@ -139,6 +139,9 @@ adb install -r app\build\outputs\apk\debug\crosspoint-pager.apk
    or scanning, its button
    changes to **Stop pager update retry** or **Stop policy retry**. Select it to
    cancel immediately; otherwise the 75-minute safety expiry still applies.
+   When learned timing is blank, or the first policy scan misses, the app shows
+   a reminder to reset **Enrolled Device** on Xteink. The reminder disappears
+   as soon as the policy is read successfully.
 6. To diagnose discovery, enable **Beat mode** and watch its event-log category
    for online/missed checks. Disable either Event log category when that history
    is not useful, or select **Clear log** to remove it.

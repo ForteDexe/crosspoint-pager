@@ -123,12 +123,12 @@ void PagerSettingsActivity::handleSelection() {
           (SETTINGS.pagerNormalPowerProfile + 1) % CrossPointSettings::PAGER_NORMAL_POWER_PROFILE_COUNT;
       break;
     case MenuItem::Enrollment:
-      SETTINGS.pagerClientEnrolled = 0;
-      SETTINGS.pagerClientToken[0] = '\0';
       break;
     case MenuItem::Count:
       return;
   }
+  SETTINGS.pagerClientEnrolled = 0;
+  SETTINGS.pagerClientToken[0] = '\0';
   SETTINGS.saveToFile();
 }
 

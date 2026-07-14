@@ -83,6 +83,10 @@ flow. To invalidate old clients, use **Settings → System →
 Pager → Enrolled Device → Reset**; the next Pager session creates a new setup
 token.
 
+Changing **Availability** or **Always Available Profile** also resets the
+enrolled device and invalidates its token. This deliberately reopens setup so
+the phone can read the new policy before enrolling again.
+
 **Always Available Profile** controls only the BLE link used by **Always
 Available**. X3 requests these connection parameters after a client connects:
 
