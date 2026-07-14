@@ -65,7 +65,12 @@ final class PagerProtocol {
 
     static PagerStatus parseStatus(String rawStatus) {
         StatusFields fields = StatusFields.parse(rawStatus);
-        return new PagerStatus("mailbox".equals(fields.value("availability")),
+        String availability = fields.value("availability");
+        String configuredAvailability = fields.value("configured_availability");
+        if (configuredAvailability.isEmpty()) {
+            configuredAvailability = availability;
+        }
+        return new PagerStatus("mailbox".equals(availability), "mailbox".equals(configuredAvailability),
                 "1".equals(fields.value("enrolled")),
                 fields.longValue("interval_s") * 1000L,
                 fields.longValue("window_ms"),
@@ -84,12 +89,22 @@ final class PagerProtocol {
                 ? "Always Available"
                 : "Every " + formatNumber(intervalSeconds / 60.0) + " min ("
                 + formatNumber(windowSeconds) + " s receive window)";
+        String configuredAvailabilityValue = status.value("configured_availability");
+        if (configuredAvailabilityValue.isEmpty()) {
+            configuredAvailabilityValue = status.value("availability");
+        }
+        String configuredAvailability = "always".equals(configuredAvailabilityValue)
+                ? "Always Available"
+                : "Every " + formatNumber(intervalSeconds / 60.0) + " min";
 
         StringBuilder result = new StringBuilder()
                 .append("Enrollment: ").append("1".equals(status.value("enrolled")) ? "enrolled" : "setup open")
-                .append("\nAvailability: ").append(availability)
+                .append("\nEffective availability: ").append(availability)
                 .append("\nAlways available profile: ").append(titleCaseProfile(status.value("profile")))
                 .append("\nBLE link: ").append("1".equals(status.value("connected")) ? "connected" : "not connected");
+        if (!configuredAvailabilityValue.equals(status.value("availability"))) {
+            result.append("\nConfigured availability: ").append(configuredAvailability);
+        }
 
         String lastWrite = status.value("last_write");
         if (!lastWrite.isEmpty() && !"none".equals(lastWrite)) {
@@ -168,13 +183,16 @@ final class PagerProtocol {
 
     static final class PagerStatus {
         final boolean mailbox;
+        final boolean configuredMailbox;
         final boolean enrolled;
         final long intervalMs;
         final long windowMs;
         final long nextWindowMs;
 
-        PagerStatus(boolean mailbox, boolean enrolled, long intervalMs, long windowMs, long nextWindowMs) {
+        PagerStatus(boolean mailbox, boolean configuredMailbox, boolean enrolled, long intervalMs, long windowMs,
+                    long nextWindowMs) {
             this.mailbox = mailbox;
+            this.configuredMailbox = configuredMailbox;
             this.enrolled = enrolled;
             this.intervalMs = intervalMs;
             this.windowMs = windowMs;

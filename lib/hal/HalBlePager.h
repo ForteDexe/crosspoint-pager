@@ -38,8 +38,8 @@ class HalBlePager {
     Invalid,
   };
 
-  bool begin(ConnectionMode connectionMode, uint8_t mailboxIntervalMinutes, NormalPowerProfile normalPowerProfile,
-             bool clientEnrolled, const char* clientToken);
+  bool begin(ConnectionMode connectionMode, ConnectionMode configuredConnectionMode, uint8_t mailboxIntervalMinutes,
+             NormalPowerProfile normalPowerProfile, bool clientEnrolled, const char* clientToken);
   void end();
 
   // Advances the bounded connection/window state machine from the activity
@@ -67,6 +67,11 @@ class HalBlePager {
   // persistent settings and saves it outside the BLE callback path.
   size_t takeEnrollmentToken(char* destination, size_t destinationSize);
 
+  // Consumes a setup-to-mailbox transition only after the enrollment client
+  // disconnects. The state machine requests that disconnect after a bounded
+  // acknowledgement grace period when the client does not close first.
+  bool takeMailboxHandoffRequest();
+
   // These are called only by the NimBLE callbacks. They keep callback work
   // bounded and leave all rendering to the activity loop.
   void setConnected(bool connected, uint16_t connectionHandle = 0, uint16_t intervalUnits = 0,
@@ -79,6 +84,7 @@ class HalBlePager {
     Normal,
     MailboxWindow,
     MailboxWaiting,
+    EnrollmentHandoff,
   };
 
   bool startRadio();
@@ -95,6 +101,7 @@ class HalBlePager {
   bool running = false;
   bool radioRunning = false;
   bool mailboxMode = false;
+  ConnectionMode configuredConnectionMode = ConnectionMode::Normal;
   NormalPowerProfile normalPowerProfile = NormalPowerProfile::Balanced;
   bool connected = false;
   uint16_t connectionHandle = 0;

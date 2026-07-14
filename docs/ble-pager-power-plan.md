@@ -102,7 +102,10 @@ radio for development.
 If no Pager client is enrolled, X3 temporarily ignores periodic availability
 and opens setup in Always Available mode so a phone/browser can read the setup
 token and enroll. Resetting **Enrolled Device** intentionally returns to that
-higher-power setup mode until the first valid tokened write completes.
+higher-power setup mode until the first valid tokened write completes. Status
+reports that effective setup behavior separately from the configured delivery
+policy. X3 acknowledges the enrollment write, waits for client disconnect with
+a one-second fallback, and then starts the configured mailbox cycle.
 
 For Always Available, **Always Available Profile** makes X3 request one of three
 BLE link policies: Responsive (30–50 ms, latency 0, 4 s timeout), Balanced

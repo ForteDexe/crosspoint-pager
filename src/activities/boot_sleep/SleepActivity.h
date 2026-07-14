@@ -34,6 +34,7 @@ class SleepActivity final : public Activity {
   void exitPager();
   bool startPagerBle();
   void persistPagerEnrollmentIfNeeded();
+  void transitionPagerMailboxIfReady();
   HalDisplay::RefreshMode nextPagerRefreshMode();
   void renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) const;
   void updatePagerText(const char* payload, size_t length);

@@ -17,6 +17,7 @@ constexpr size_t PAYLOAD_PREFIX_BYTES = sizeof(PAYLOAD_PREFIX) - 1;
 constexpr unsigned long RECEIVE_WINDOW_MS = 2UL * 1000UL;
 constexpr unsigned long CONNECTION_TIMEOUT_MS = 3UL * 1000UL;
 constexpr unsigned long PAYLOAD_ACK_GRACE_MS = 250UL;
+constexpr unsigned long ENROLLMENT_ACK_GRACE_MS = 1UL * 1000UL;
 // Units are 0.625 ms. The NimBLE default is a 30-60 ms fast interval;
 // 100 ms still gives about 20 chances per Mailbox window with fewer TX events.
 constexpr uint16_t MAILBOX_ADVERTISING_INTERVAL = 160;
@@ -141,7 +142,8 @@ PagerStatusCallbacks statusCallbacks;
 
 HalBlePager blePager;
 
-bool HalBlePager::begin(const ConnectionMode connectionMode, const uint8_t mailboxIntervalMinutes,
+bool HalBlePager::begin(const ConnectionMode connectionMode, const ConnectionMode requestedConfiguredConnectionMode,
+                        const uint8_t mailboxIntervalMinutes,
                         const NormalPowerProfile requestedNormalPowerProfile, const bool requestedClientEnrolled,
                         const char* requestedClientToken) {
   portENTER_CRITICAL(&payloadMutex);
@@ -152,6 +154,7 @@ bool HalBlePager::begin(const ConnectionMode connectionMode, const uint8_t mailb
   running = true;
   radioRunning = false;
   mailboxMode = connectionMode == ConnectionMode::Mailbox;
+  configuredConnectionMode = requestedConfiguredConnectionMode;
   normalPowerProfile = requestedNormalPowerProfile;
   clientEnrolled = requestedClientEnrolled;
   copyToken(clientToken, requestedClientToken);
@@ -290,6 +293,7 @@ void HalBlePager::end() {
   running = false;
   radioRunning = false;
   mailboxMode = false;
+  configuredConnectionMode = ConnectionMode::Normal;
   clientEnrolled = false;
   clientToken[0] = '\0';
   enrollmentPending = false;
@@ -344,58 +348,72 @@ void HalBlePager::update() {
     return;
   }
 
-  if (!mailboxMode) {
-    if (connected && connectionParamsUpdateRequested) {
-      connectionParamsUpdateRequested = false;
-      updateConnectionParams = true;
-      paramsConnectionHandle = connectionHandle;
-      requestedNormalPowerProfile = normalPowerProfile;
+  if (mailboxMode) {
+    switch (radioState) {
+      case RadioState::MailboxWindow:
+        if (connected) {
+          const bool shouldDisconnectAfterPayload =
+              disconnectAfterAt != 0 && hasReached(now, disconnectAfterAt);
+          const bool connectionTimedOut = hasReached(now, connectionStartedAt + CONNECTION_TIMEOUT_MS);
+          if ((shouldDisconnectAfterPayload || connectionTimedOut) && !disconnectRequested) {
+            disconnectRequested = true;
+            disconnectConnection = true;
+            disconnectHandle = connectionHandle;
+          }
+        } else if (hasReached(now, receiveWindowStartedAt + RECEIVE_WINDOW_MS)) {
+          radioState = RadioState::MailboxWaiting;
+          nextMailboxWindowAt = now + mailboxIntervalMs;
+          stopAdvertising = true;
+        }
+        break;
+      case RadioState::MailboxWaiting:
+      case RadioState::Normal:
+      case RadioState::EnrollmentHandoff:
+        break;
     }
-    if (!connected && advertisingRestartRequested) {
-      advertisingRestartRequested = false;
-      startAdvertising = true;
-    }
-    portEXIT_CRITICAL(&payloadMutex);
-    if (startAdvertising && !NimBLEDevice::startAdvertising()) {
-      portENTER_CRITICAL(&payloadMutex);
-      advertisingRestartRequested = true;
-      portEXIT_CRITICAL(&payloadMutex);
-      LOG_ERR("BLE", "Could not restart pager advertising");
-    }
-    if (updateConnectionParams) {
-      auto* server = NimBLEDevice::getServer();
-      if (server != nullptr) {
-        const auto parameters = parametersFor(requestedNormalPowerProfile);
-        server->updateConnParams(paramsConnectionHandle, parameters.minInterval, parameters.maxInterval,
-                                 parameters.latency, parameters.supervisionTimeout);
-      }
-    }
-    return;
-  }
-
-  switch (radioState) {
-    case RadioState::MailboxWindow:
-      if (connected) {
-        const bool shouldDisconnectAfterPayload =
-            disconnectAfterAt != 0 && hasReached(now, disconnectAfterAt);
-        const bool connectionTimedOut = hasReached(now, connectionStartedAt + CONNECTION_TIMEOUT_MS);
-        if ((shouldDisconnectAfterPayload || connectionTimedOut) && !disconnectRequested) {
+  } else {
+    switch (radioState) {
+      case RadioState::Normal:
+        if (connected && connectionParamsUpdateRequested) {
+          connectionParamsUpdateRequested = false;
+          updateConnectionParams = true;
+          paramsConnectionHandle = connectionHandle;
+          requestedNormalPowerProfile = normalPowerProfile;
+        }
+        if (!connected && advertisingRestartRequested) {
+          advertisingRestartRequested = false;
+          startAdvertising = true;
+        }
+        break;
+      case RadioState::EnrollmentHandoff:
+        if (connected && disconnectAfterAt != 0 && hasReached(now, disconnectAfterAt) && !disconnectRequested) {
           disconnectRequested = true;
           disconnectConnection = true;
           disconnectHandle = connectionHandle;
         }
-      } else if (hasReached(now, receiveWindowStartedAt + RECEIVE_WINDOW_MS)) {
-        radioState = RadioState::MailboxWaiting;
-        nextMailboxWindowAt = now + mailboxIntervalMs;
-        stopAdvertising = true;
-      }
-      break;
-    case RadioState::MailboxWaiting:
-      break;
-    case RadioState::Normal:
-      break;
+        break;
+      case RadioState::MailboxWindow:
+      case RadioState::MailboxWaiting:
+        break;
+    }
   }
   portEXIT_CRITICAL(&payloadMutex);
+
+  if (startAdvertising && !NimBLEDevice::startAdvertising()) {
+    portENTER_CRITICAL(&payloadMutex);
+    advertisingRestartRequested = true;
+    portEXIT_CRITICAL(&payloadMutex);
+    LOG_ERR("BLE", "Could not restart pager advertising");
+  }
+
+  if (updateConnectionParams) {
+    auto* server = NimBLEDevice::getServer();
+    if (server != nullptr) {
+      const auto parameters = parametersFor(requestedNormalPowerProfile);
+      server->updateConnParams(paramsConnectionHandle, parameters.minInterval, parameters.maxInterval,
+                               parameters.latency, parameters.supervisionTimeout);
+    }
+  }
 
   if (stopAdvertising) {
     NimBLEDevice::stopAdvertising();
@@ -519,6 +537,17 @@ size_t HalBlePager::takeEnrollmentToken(char* destination, size_t destinationSiz
   return CLIENT_TOKEN_BYTES;
 }
 
+bool HalBlePager::takeMailboxHandoffRequest() {
+  portENTER_CRITICAL(&payloadMutex);
+  const bool result = running && radioRunning && !mailboxMode && clientEnrolled && !connected &&
+                      radioState == RadioState::EnrollmentHandoff;
+  if (result) {
+    radioState = RadioState::Normal;
+  }
+  portEXIT_CRITICAL(&payloadMutex);
+  return result;
+}
+
 size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) const {
   if (destination == nullptr || destinationSize == 0) {
     return 0;
@@ -528,6 +557,7 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
   char statusToken[CLIENT_TOKEN_BYTES + 1] = {};
   portENTER_CRITICAL(&payloadMutex);
   const bool statusMailboxMode = mailboxMode;
+  const bool statusConfiguredMailboxMode = configuredConnectionMode == ConnectionMode::Mailbox;
   const bool statusConnected = connected;
   const bool statusClientEnrolled = clientEnrolled;
   const unsigned long statusMailboxIntervalMs = mailboxIntervalMs;
@@ -547,12 +577,14 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
 
   const int written = snprintf(
       destination, destinationSize,
-      "v=2;availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;connected=%u;enrolled=%u;"
+      "v=3;availability=%s;configured_availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;"
+      "connected=%u;enrolled=%u;"
       "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
       "next_window_ms=%lu",
-      statusMailboxMode ? "mailbox" : "always", statusMailboxIntervalMs / 1000UL, RECEIVE_WINDOW_MS,
-      parametersFor(statusPowerProfile).name, statusConnected ? 1U : 0U, statusClientEnrolled ? 1U : 0U,
-      statusToken, writeStatusName(statusLastWrite), statusConnectionIntervalUnits, statusConnectionLatency,
+      statusMailboxMode ? "mailbox" : "always", statusConfiguredMailboxMode ? "mailbox" : "always",
+      statusMailboxIntervalMs / 1000UL, RECEIVE_WINDOW_MS, parametersFor(statusPowerProfile).name,
+      statusConnected ? 1U : 0U, statusClientEnrolled ? 1U : 0U, statusToken,
+      writeStatusName(statusLastWrite), statusConnectionIntervalUnits, statusConnectionLatency,
       statusSupervisionTimeoutUnits, nextWindowMs);
   if (written <= 0) {
     destination[0] = '\0';
@@ -597,7 +629,7 @@ void HalBlePager::setConnected(const bool isConnected, const uint16_t newConnect
     if (mailboxMode) {
       radioState = RadioState::MailboxWaiting;
       nextMailboxWindowAt = now + mailboxIntervalMs;
-    } else {
+    } else if (radioState != RadioState::EnrollmentHandoff) {
       advertisingRestartRequested = true;
     }
   }
@@ -652,6 +684,11 @@ void HalBlePager::storePayload(const uint8_t* data, const size_t length) {
     std::memcpy(pendingEnrollmentToken, data + tokenOffset, CLIENT_TOKEN_BYTES);
     pendingEnrollmentToken[CLIENT_TOKEN_BYTES] = '\0';
     lastWriteStatus = WriteStatus::Enrolled;
+    if (!mailboxMode && configuredConnectionMode == ConnectionMode::Mailbox && connected) {
+      radioState = RadioState::EnrollmentHandoff;
+      disconnectAfterAt = now + ENROLLMENT_ACK_GRACE_MS;
+      disconnectRequested = false;
+    }
   } else {
     lastWriteStatus = WriteStatus::Accepted;
   }

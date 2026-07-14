@@ -191,6 +191,7 @@ void SleepActivity::loop() {
 
   blePager.update();
   persistPagerEnrollmentIfNeeded();
+  transitionPagerMailboxIfReady();
   if (pagerMailboxMode && blePager.isMailboxWaiting()) {
     runPagerMailboxSleep();
     return;
@@ -213,8 +214,13 @@ void SleepActivity::loop() {
 bool SleepActivity::startPagerBle() {
   const auto connectionMode =
       pagerMailboxMode ? HalBlePager::ConnectionMode::Mailbox : HalBlePager::ConnectionMode::Normal;
-  if (blePager.begin(connectionMode, SETTINGS.pagerMailboxIntervalMinutes, pagerNormalPowerProfile(),
-                     SETTINGS.pagerClientEnrolled != 0, SETTINGS.pagerClientToken)) {
+  const auto configuredConnectionMode =
+      SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_MAILBOX &&
+              powerManager.canUsePagerMailboxLightSleep()
+          ? HalBlePager::ConnectionMode::Mailbox
+          : HalBlePager::ConnectionMode::Normal;
+  if (blePager.begin(connectionMode, configuredConnectionMode, SETTINGS.pagerMailboxIntervalMinutes,
+                     pagerNormalPowerProfile(), SETTINGS.pagerClientEnrolled != 0, SETTINGS.pagerClientToken)) {
     powerManager.enablePagerLightSleep();
     return true;
   }
@@ -235,8 +241,10 @@ void SleepActivity::persistPagerEnrollmentIfNeeded() {
     LOG_ERR("PAGER", "Could not save Pager enrollment");
   }
   LOG_INF("PAGER", "Pager client enrolled");
+}
 
-  if (pagerMailboxMode || SETTINGS.pagerConnectionMode != CrossPointSettings::PAGER_MAILBOX) {
+void SleepActivity::transitionPagerMailboxIfReady() {
+  if (pagerMailboxMode || !blePager.takeMailboxHandoffRequest()) {
     return;
   }
   if (!powerManager.canUsePagerMailboxLightSleep()) {

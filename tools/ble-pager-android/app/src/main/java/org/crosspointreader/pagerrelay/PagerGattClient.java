@@ -52,6 +52,7 @@ final class PagerGattClient {
     private String lastAcknowledgedPayload;
     private boolean readingStatusForSend;
     private boolean mailboxScheduleKnown;
+    private boolean mailboxConfigured;
     private boolean mailboxAttemptActive;
     private long mailboxIntervalMs;
     private long mailboxWindowMs;
@@ -284,6 +285,9 @@ final class PagerGattClient {
     }
 
     private void rememberMailboxStatus(PagerProtocol.PagerStatus status) {
+        mailboxConfigured = status.configuredMailbox;
+        mailboxIntervalMs = status.intervalMs;
+        mailboxWindowMs = status.windowMs;
         if (!status.canScheduleMailbox()) {
             mailboxScheduleKnown = false;
             lastMailboxWindowSeenAtMs = 0L;
@@ -292,8 +296,6 @@ final class PagerGattClient {
             return;
         }
         mailboxScheduleKnown = true;
-        mailboxIntervalMs = status.intervalMs;
-        mailboxWindowMs = status.windowMs;
         long now = SystemClock.elapsedRealtime();
         if (status.nextWindowMs > 0L) {
             nextMailboxWindowAtMs = now + status.nextWindowMs;
@@ -443,13 +445,22 @@ final class PagerGattClient {
             }
             boolean identical = currentPayload != null && currentPayload.equals(lastAcknowledgedPayload);
             lastAcknowledgedPayload = currentPayload;
+            boolean startedMailboxHandoff = !mailboxScheduleKnown && mailboxConfigured
+                    && mailboxIntervalMs > 0L && mailboxWindowMs > 0L;
+            if (startedMailboxHandoff) {
+                mailboxScheduleKnown = true;
+                lastMailboxWindowSeenAtMs = SystemClock.elapsedRealtime();
+                nextMailboxWindowAtMs = lastMailboxWindowSeenAtMs + mailboxWindowMs + mailboxIntervalMs;
+            }
             if (mailboxAttemptActive) {
                 if (currentPayload != null && currentPayload.equals(mailboxPayload)) {
                     mailboxPayload = null;
                     mailboxPayloadQueuedAtMs = 0L;
                 }
                 mailboxAttemptActive = false;
-                updateNextMailboxWindowFromNow();
+                if (!startedMailboxHandoff) {
+                    updateNextMailboxWindowFromNow();
+                }
             }
             complete(identical
                     ? "Pager update sent.\nMessage identical; X3 will not update content."

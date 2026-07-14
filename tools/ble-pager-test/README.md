@@ -39,15 +39,17 @@ Pager standby, select **Settings → System → Pager**:
 - **Enrolled Device → Reset** clears the stored Pager client. The next Pager
   session opens setup in Always Available mode, exposes a setup token through
   the read-only status characteristic, and lets the browser enroll with its
-  first valid write.
+  first valid write. Status shows that effective setup behavior separately from
+  the configured post-enrollment availability.
 
 After connecting, the page reads and displays X3's policy, enrollment state,
 and latest BLE link timing. If setup is open, the page stores X3's setup token
 in browser localStorage and includes it in future writes. This status is
 read-only; policy remains controlled on X3. The browser cannot scan and
 reconnect in the background, so use **Always Available** for interactive PC
-debugging. With periodic availability, connect only while the X3's short
-advertising window is visible.
+debugging. A first valid setup write is acknowledged before X3 disconnects and
+switches to configured periodic availability. After that, connect only while
+the X3's short advertising window is visible.
 
 ## Current power behavior
 

@@ -104,13 +104,20 @@ function renderPolicy(rawStatus) {
   const availability = status.availability === "always"
     ? "Always Available"
     : `Every ${intervalSeconds / 60} min (${windowSeconds} s receive window)`;
+  const configuredAvailabilityValue = status.configured_availability || status.availability;
+  const configuredAvailability = configuredAvailabilityValue === "always"
+    ? "Always Available"
+    : `Every ${intervalSeconds / 60} min`;
 
   const details = [
     `Enrollment: ${status.enrolled === "1" ? "enrolled" : "setup open"}`,
-    `Availability: ${availability}`,
+    `Effective availability: ${availability}`,
     `Always available profile: ${titleCaseProfile(status.profile)}`,
     `BLE link: ${status.connected === "1" ? "connected" : "not connected"}`,
   ];
+  if (configuredAvailabilityValue !== status.availability) {
+    details.splice(2, 0, `Configured availability: ${configuredAvailability}`);
+  }
   if (status.last_write && status.last_write !== "none") {
     details.push(`Last write: ${status.last_write}`);
   }

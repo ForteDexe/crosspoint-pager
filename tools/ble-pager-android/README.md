@@ -32,11 +32,13 @@ The test page refuses an oversized payload, like the browser test page.
 Notification delivery preserves the title and source-app footer, truncating the
 message at UTF-8 character boundaries when necessary.
 
-The policy/status read is device-owned and read-only. It reports availability,
-receive-window timing, Always Available profile, enrollment state, and the
-latest BLE link timing. If X3 setup is open, **Refresh pager policy** stores the
-setup token locally. The first valid write enrolls the phone. After that, the
-Android relay writes notifications directly after connecting so periodic
+The policy/status read is device-owned and read-only. It reports effective and
+configured availability, receive-window timing, Always Available profile,
+enrollment state, and the latest BLE link timing. If X3 setup is open,
+**Refresh pager policy** stores the setup token locally. The first valid write
+enrolls the phone; Android derives the first expected mailbox window while X3
+acknowledges the write and completes the setup-to-mailbox handoff. After that,
+the relay writes notifications directly after connecting so periodic
 availability windows are not spent on a status read.
 
 ## Connection mode for battery testing
@@ -109,11 +111,11 @@ adb install -r app\build\outputs\apk\debug\crosspoint-pager.apk
    for online/missed checks. Disable **Enable event log** when the history is
    not needed; the current operation and mailbox countdown remain visible.
 
-For periodic availability, Android can schedule around mailbox windows only
-after it has learned the mailbox interval from X3 status. If schedule is not
-known yet, the first send still performs an immediate bounded scan; once a
-mailbox status read or delivery succeeds while X3 reports `availability=mailbox`,
-later test sends and forwarded notifications use the mailbox queue.
+For periodic availability, Android schedules around mailbox windows after it
+learns `configured_availability=mailbox` and the interval from X3 status. The
+first enrollment send still connects immediately through effective Always
+Available setup; its acknowledged write establishes the first mailbox estimate.
+Later test sends and forwarded notifications use the mailbox queue.
 
 If the phone loses its token or X3 is reset, use **Settings → System → Pager →
 Enrolled Device → Reset** on X3, re-enter Pager standby, then select **Refresh

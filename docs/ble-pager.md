@@ -76,8 +76,10 @@ is enrolled, Pager forces **Always Available** setup mode even when the saved
 Availability is periodic. The read-only status characteristic exposes a fresh
 16-character setup token only in that setup state. The phone or browser stores
 that token and includes it in every later write. The first valid write enrolls
-the client; if periodic availability was selected, X3 can then switch into the
-periodic mailbox flow. To invalidate old clients, use **Settings → System →
+the client. If periodic availability was selected, X3 keeps the setup link
+alive long enough to acknowledge that write, waits for the client disconnect
+with a one-second fallback, and only then switches into the periodic mailbox
+flow. To invalidate old clients, use **Settings → System →
 Pager → Enrolled Device → Reset**; the next Pager session creates a new setup
 token.
 
@@ -94,11 +96,14 @@ The phone or PC is the BLE central and may accept or adjust that request, so
 these values are preferences rather than guaranteed final timing. The read-only
 status characteristic exposes X3's policy and the latest negotiated link
 values as semicolon-separated `key=value` text. Its keys are `v`,
-`availability`, `interval_s`, `window_ms`, `profile`, `connected`, `enrolled`,
-`enroll_token` (only populated while setup is open), `last_write`,
+`availability` (effective radio behavior), `configured_availability`,
+`interval_s`, `window_ms`, `profile`, `connected`, `enrolled`, `enroll_token`
+(only populated while setup is open), `last_write`,
 `conn_interval_units` (1.25 ms units), `conn_latency`, `conn_timeout_units`
 (10 ms units), and `next_window_ms`. Clients can read the schedule and link
-state, but cannot change the battery policy.
+state, but cannot change the battery policy. Status version 3 separates the
+Always Available enrollment session from its configured periodic policy so a
+client can prepare its first mailbox scan before X3 completes the handoff.
 
 Periodic availability is still not true deep sleep: the X3 battery latch stays powered so the
 MCU can return from timer light sleep without rebooting. Current must still be

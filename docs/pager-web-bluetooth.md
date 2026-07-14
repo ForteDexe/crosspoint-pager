@@ -86,12 +86,16 @@ secure context such as `localhost` or HTTPS.
 1. Select **Connect Bluetooth** in the browser page.
 2. In the browser's device chooser, select **CrossPoint Pager**.
 3. Check **X3 Pager policy** to see the device's Availability, Always Available
-   profile, enrollment state, and latest negotiated BLE link timing. If setup
-   is open, the policy read stores X3's setup token in this browser.
+   profile, enrollment state, and latest negotiated BLE link timing. During
+   setup it shows both effective Always Available behavior and the configured
+   post-enrollment policy. If setup is open, the policy read stores X3's setup
+   token in this browser.
 4. Enter a title, message, and footer, then select **Send pager update**.
 
 The browser writes a compact authenticated UTF-8 GATT payload to the device.
-The first valid write after reset enrolls this browser. Pager refreshes the
+The first valid write after reset enrolls this browser. X3 acknowledges the
+write before disconnecting the setup link and entering configured periodic
+availability. Pager refreshes the
 e-ink screen only when the display payload changes. It uses fast e-ink
 refreshes for message updates and performs its cleanup refresh according to
 **Settings > Display > Refresh Frequency**.
