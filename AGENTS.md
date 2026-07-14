@@ -75,6 +75,26 @@ CP1252. For C/C++ changes, build before handoff; run `pio check -e default`
 when the change warrants static analysis. Report that device, battery, BLE, and
 all-orientation testing still require hardware unless actually performed.
 
+For the Android companion, reuse the existing user-local toolchain instead of
+downloading another SDK or JDK:
+
+```powershell
+$env:JAVA_HOME = Join-Path $env:LOCALAPPDATA 'CrossPointPager\jdk\jdk-17.0.19+10'
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'CrossPointPager\android-sdk'
+Push-Location tools\ble-pager-android
+try {
+    .\gradlew.bat clean lintDebug assembleDebug
+} finally {
+    Pop-Location
+}
+```
+
+The APK is generated at
+`tools\ble-pager-android\app\build\outputs\apk\debug\crosspoint-pager.apk`.
+See `tools/ble-pager-android/README.md` for toolchain preflight checks, `aapt`
+package verification, and installation. If the documented tools are absent,
+report that first; do not silently install a replacement toolchain.
+
 Never flash or upload firmware without explicit user approval. Do not claim
 memory, performance, or battery improvements without identifying the mechanism
 and collecting relevant build, heap, or current-draw evidence.

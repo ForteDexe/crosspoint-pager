@@ -124,23 +124,57 @@ enabled, so an ON switch always corresponds to an active foreground service.
 
 ## Build a debug APK
 
-Install Android SDK Platform 35 and a JDK 17, set `ANDROID_HOME` to the SDK,
-then run from this directory:
+This checkout already uses a user-local Android toolchain. Do not download a
+second SDK or JDK before checking these locations:
+
+- SDK: `%LOCALAPPDATA%\CrossPointPager\android-sdk`
+- JDK: `%LOCALAPPDATA%\CrossPointPager\jdk\jdk-17.0.19+10`
+
+From the repository root, run this complete PowerShell build. The preflight
+checks stop with a clear error when the established toolchain is actually
+missing; they do not install or modify anything:
 
 ```powershell
-.\gradlew.bat assembleDebug
+$env:JAVA_HOME = Join-Path $env:LOCALAPPDATA 'CrossPointPager\jdk\jdk-17.0.19+10'
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'CrossPointPager\android-sdk'
+
+if (-not (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
+    throw "CrossPoint Pager JDK not found at $env:JAVA_HOME"
+}
+if (-not (Test-Path "$env:ANDROID_HOME\platforms\android-35\android.jar")) {
+    throw "Android SDK Platform 35 not found at $env:ANDROID_HOME"
+}
+
+Push-Location tools\ble-pager-android
+try {
+    .\gradlew.bat clean lintDebug assembleDebug
+} finally {
+    Pop-Location
+}
 ```
 
-The APK is written to:
+The build runs Android lint and writes the debug APK to:
 
 ```text
-app\build\outputs\apk\debug\crosspoint-pager.apk
+tools\ble-pager-android\app\build\outputs\apk\debug\crosspoint-pager.apk
+```
+
+Optionally verify the APK identity with the newest installed `aapt.exe`:
+
+```powershell
+$aapt = Get-ChildItem "$env:ANDROID_HOME\build-tools\*\aapt.exe" |
+    Sort-Object { [version]$_.Directory.Name } -Descending |
+    Select-Object -First 1
+if (-not $aapt) {
+    throw "aapt.exe not found under $env:ANDROID_HOME\build-tools"
+}
+& $aapt.FullName dump badging tools\ble-pager-android\app\build\outputs\apk\debug\crosspoint-pager.apk
 ```
 
 Install on a connected Android device with:
 
 ```powershell
-adb install -r app\build\outputs\apk\debug\crosspoint-pager.apk
+& "$env:ANDROID_HOME\platform-tools\adb.exe" install -r tools\ble-pager-android\app\build\outputs\apk\debug\crosspoint-pager.apk
 ```
 
 ## Use it
