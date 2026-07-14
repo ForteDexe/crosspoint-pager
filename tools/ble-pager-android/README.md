@@ -33,8 +33,9 @@ Notification delivery preserves the title and source-app footer, truncating the
 message at UTF-8 character boundaries when necessary.
 
 The policy/status read is device-owned and read-only. It reports effective and
-configured availability, receive-window timing, Always Available profile,
-enrollment state, and the latest BLE link timing. If X3 setup is open,
+configured availability, receive-window timing, enrollment state, and the
+latest BLE link timing. The Always Available profile is present only while
+effective availability is Always Available. If X3 setup is open,
 **Refresh pager policy** stores the setup token locally. The first valid write
 enrolls the phone; Android derives the first expected mailbox window while X3
 acknowledges the write and completes the setup-to-mailbox handoff. After that,

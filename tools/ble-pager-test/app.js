@@ -112,9 +112,11 @@ function renderPolicy(rawStatus) {
   const details = [
     `Enrollment: ${status.enrolled === "1" ? "enrolled" : "setup open"}`,
     `Effective availability: ${availability}`,
-    `Always available profile: ${titleCaseProfile(status.profile)}`,
     `BLE link: ${status.connected === "1" ? "connected" : "not connected"}`,
   ];
+  if (status.availability === "always" && status.profile) {
+    details.splice(2, 0, `Always available profile: ${titleCaseProfile(status.profile)}`);
+  }
   if (configuredAvailabilityValue !== status.availability) {
     details.splice(2, 0, `Configured availability: ${configuredAvailability}`);
   }
@@ -125,7 +127,8 @@ function renderPolicy(rawStatus) {
   if (status.connected === "1" && Number(status.conn_interval_units) > 0) {
     const intervalMs = Number(status.conn_interval_units) * 1.25;
     const supervisionTimeoutMs = Number(status.conn_timeout_units) * 10;
-    details.push(`Negotiated link timing: ${formatNumber(intervalMs)} ms interval, latency ${status.conn_latency}, ${formatNumber(supervisionTimeoutMs)} ms timeout`);
+    const timingLabel = status.availability === "mailbox" ? "Mailbox link timing" : "Negotiated link timing";
+    details.push(`${timingLabel}: ${formatNumber(intervalMs)} ms interval, latency ${status.conn_latency}, ${formatNumber(supervisionTimeoutMs)} ms timeout`);
   }
 
   policyStatus.textContent = details.join("\n");

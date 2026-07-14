@@ -99,9 +99,12 @@ final class PagerProtocol {
 
         StringBuilder result = new StringBuilder()
                 .append("Enrollment: ").append("1".equals(status.value("enrolled")) ? "enrolled" : "setup open")
-                .append("\nEffective availability: ").append(availability)
-                .append("\nAlways available profile: ").append(titleCaseProfile(status.value("profile")))
-                .append("\nBLE link: ").append("1".equals(status.value("connected")) ? "connected" : "not connected");
+                .append("\nEffective availability: ").append(availability);
+        String profile = status.value("profile");
+        if ("always".equals(status.value("availability")) && !profile.isEmpty()) {
+            result.append("\nAlways available profile: ").append(titleCaseProfile(profile));
+        }
+        result.append("\nBLE link: ").append("1".equals(status.value("connected")) ? "connected" : "not connected");
         if (!configuredAvailabilityValue.equals(status.value("availability"))) {
             result.append("\nConfigured availability: ").append(configuredAvailability);
         }
@@ -122,7 +125,10 @@ final class PagerProtocol {
         if ("1".equals(status.value("connected")) && intervalUnits > 0) {
             double intervalMs = intervalUnits * 1.25;
             int timeoutUnits = status.intValue("conn_timeout_units");
-            result.append("\nNegotiated link timing: ")
+            String timingLabel = "mailbox".equals(status.value("availability"))
+                    ? "Mailbox link timing: "
+                    : "Negotiated link timing: ";
+            result.append("\n").append(timingLabel)
                     .append(formatNumber(intervalMs))
                     .append(" ms interval, latency ")
                     .append(status.value("conn_latency"))

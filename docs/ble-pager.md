@@ -93,15 +93,18 @@ Available**. X3 requests these connection parameters after a client connects:
 | Battery Saver | 200–300 ms | 4 | 10 s |
 
 The phone or PC is the BLE central and may accept or adjust that request, so
-these values are preferences rather than guaranteed final timing. The read-only
-status characteristic exposes X3's policy and the latest negotiated link
-values as semicolon-separated `key=value` text. Its keys are `v`,
+these values are preferences rather than guaranteed final timing. Mailbox mode
+does not request this profile: its short connection races to deliver a payload
+and disconnect. The read-only status characteristic exposes X3's policy and
+the latest negotiated link values as semicolon-separated `key=value` text. Its
+keys are `v`,
 `availability` (effective radio behavior), `configured_availability`,
-`interval_s`, `window_ms`, `profile`, `connected`, `enrolled`, `enroll_token`
-(only populated while setup is open), `last_write`,
+`interval_s`, `window_ms`, `connected`, `enrolled`, `enroll_token` (only
+populated while setup is open), `last_write`,
 `conn_interval_units` (1.25 ms units), `conn_latency`, `conn_timeout_units`
-(10 ms units), and `next_window_ms`. Clients can read the schedule and link
-state, but cannot change the battery policy. Status version 3 separates the
+(10 ms units), and `next_window_ms`. The `profile` key is present only while
+effective availability is Always Available. Clients can read the schedule and
+link state, but cannot change the battery policy. Status version 3 separates the
 Always Available enrollment session from its configured periodic policy so a
 client can prepare its first mailbox scan before X3 completes the handoff.
 

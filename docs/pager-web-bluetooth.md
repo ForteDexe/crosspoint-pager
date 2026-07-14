@@ -85,11 +85,12 @@ secure context such as `localhost` or HTTPS.
 
 1. Select **Connect Bluetooth** in the browser page.
 2. In the browser's device chooser, select **CrossPoint Pager**.
-3. Check **X3 Pager policy** to see the device's Availability, Always Available
-   profile, enrollment state, and latest negotiated BLE link timing. During
-   setup it shows both effective Always Available behavior and the configured
-   post-enrollment policy. If setup is open, the policy read stores X3's setup
-   token in this browser.
+3. Check **X3 Pager policy** to see the device's Availability, enrollment state,
+   and latest BLE link timing. The Always Available profile is shown only while
+   effective availability is Always Available. During setup it shows both the
+   effective Always Available behavior and the configured post-enrollment
+   policy. If setup is open, the policy read stores X3's setup token in this
+   browser.
 4. Enter a title, message, and footer, then select **Send pager update**.
 
 The browser writes a compact authenticated UTF-8 GATT payload to the device.

@@ -575,17 +575,30 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
           : 0;
   portEXIT_CRITICAL(&payloadMutex);
 
-  const int written = snprintf(
-      destination, destinationSize,
-      "v=3;availability=%s;configured_availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;"
-      "connected=%u;enrolled=%u;"
-      "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
-      "next_window_ms=%lu",
-      statusMailboxMode ? "mailbox" : "always", statusConfiguredMailboxMode ? "mailbox" : "always",
-      statusMailboxIntervalMs / 1000UL, RECEIVE_WINDOW_MS, parametersFor(statusPowerProfile).name,
-      statusConnected ? 1U : 0U, statusClientEnrolled ? 1U : 0U, statusToken,
-      writeStatusName(statusLastWrite), statusConnectionIntervalUnits, statusConnectionLatency,
-      statusSupervisionTimeoutUnits, nextWindowMs);
+  int written = 0;
+  if (statusMailboxMode) {
+    written = snprintf(
+        destination, destinationSize,
+        "v=3;availability=mailbox;configured_availability=%s;interval_s=%lu;window_ms=%lu;"
+        "connected=%u;enrolled=%u;"
+        "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
+        "next_window_ms=%lu",
+        statusConfiguredMailboxMode ? "mailbox" : "always", statusMailboxIntervalMs / 1000UL,
+        RECEIVE_WINDOW_MS, statusConnected ? 1U : 0U, statusClientEnrolled ? 1U : 0U, statusToken,
+        writeStatusName(statusLastWrite), statusConnectionIntervalUnits, statusConnectionLatency,
+        statusSupervisionTimeoutUnits, nextWindowMs);
+  } else {
+    written = snprintf(
+        destination, destinationSize,
+        "v=3;availability=always;configured_availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;"
+        "connected=%u;enrolled=%u;"
+        "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
+        "next_window_ms=%lu",
+        statusConfiguredMailboxMode ? "mailbox" : "always", statusMailboxIntervalMs / 1000UL,
+        RECEIVE_WINDOW_MS, parametersFor(statusPowerProfile).name, statusConnected ? 1U : 0U,
+        statusClientEnrolled ? 1U : 0U, statusToken, writeStatusName(statusLastWrite),
+        statusConnectionIntervalUnits, statusConnectionLatency, statusSupervisionTimeoutUnits, nextWindowMs);
+  }
   if (written <= 0) {
     destination[0] = '\0';
     return 0;
