@@ -111,9 +111,15 @@ void SleepActivity::onEnter() {
     pagerRingChanged = false;
     pagerBatchId[0] = '\0';
     pagerStandaloneRenderAt = 0;
+    pagerPhoneNextWindowAt = 0;
     ensurePagerClientToken();
     pagerMailboxMode = SETTINGS.pagerClientEnrolled != 0 &&
                        SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_MAILBOX;
+    if (pagerMailboxMode && !halClock.isAvailable()) {
+      // X4 has no persistent RTC. Bootstrap as Always Available until BEGIN
+      // supplies UTC phase, then hand off to the configured mailbox policy.
+      pagerMailboxMode = false;
+    }
     if (pagerMailboxMode && !powerManager.canUsePagerMailboxLightSleep()) {
       LOG_ERR("PAGER", "Mailbox mode requires the pager_power firmware; using Normal mode");
       pagerMailboxMode = false;
@@ -284,6 +290,11 @@ bool SleepActivity::startPagerBle(const HalBlePager::MailboxStart mailboxStart) 
       const unsigned long secondsWithinHour = static_cast<unsigned long>(minute) * 60UL + second;
       const unsigned long remainder = secondsWithinHour % intervalSeconds;
       firstMailboxDelayMs = (remainder == 0 ? 0 : intervalSeconds - remainder) * 1000UL;
+    } else if (pagerPhoneNextWindowAt != 0) {
+      const unsigned long now = millis();
+      firstMailboxDelayMs = static_cast<long>(pagerPhoneNextWindowAt - now) > 0
+                                ? pagerPhoneNextWindowAt - now
+                                : 0;
     }
   }
   if (blePager.begin(connectionMode, configuredConnectionMode, SETTINGS.pagerMailboxIntervalMinutes,
@@ -465,7 +476,10 @@ void SleepActivity::processPagerCommand(HalBlePager::Command& command) {
         const unsigned long intervalSeconds = static_cast<unsigned long>(SETTINGS.pagerMailboxIntervalMinutes) * 60UL;
         const unsigned long remainder = epochSeconds % intervalSeconds;
         const unsigned long delaySeconds = remainder == 0 ? intervalSeconds : intervalSeconds - remainder;
-        blePager.alignNextMailboxWindow(delaySeconds * 1000UL);
+        pagerPhoneNextWindowAt = millis() + delaySeconds * 1000UL;
+        if (pagerMailboxMode) {
+          blePager.alignNextMailboxWindow(delaySeconds * 1000UL);
+        }
       }
       return;
     }

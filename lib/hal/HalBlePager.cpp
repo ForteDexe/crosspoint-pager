@@ -831,7 +831,7 @@ void HalBlePager::storePayload(const uint8_t* data, const size_t length) {
     std::memcpy(pendingEnrollmentToken, data + tokenOffset, CLIENT_TOKEN_BYTES);
     pendingEnrollmentToken[CLIENT_TOKEN_BYTES] = '\0';
     lastWriteStatus = WriteStatus::Enrolled;
-    if (!mailboxMode && configuredConnectionMode == ConnectionMode::Mailbox && connected) {
+    if (!mailboxMode && configuredConnectionMode == ConnectionMode::Mailbox && connected && gpio.deviceIsX3()) {
       radioState = RadioState::EnrollmentHandoff;
       disconnectAfterAt = now + ENROLLMENT_ACK_GRACE_MS;
       disconnectRequested = false;
@@ -854,6 +854,10 @@ void HalBlePager::storePayload(const uint8_t* data, const size_t length) {
     case CommandType::End:
       commandBatchOpen = false;
       disconnectAfterAt = now + PAYLOAD_ACK_GRACE_MS;
+      if (!mailboxMode && configuredConnectionMode == ConnectionMode::Mailbox && connected) {
+        radioState = RadioState::EnrollmentHandoff;
+        disconnectAfterAt = now + ENROLLMENT_ACK_GRACE_MS;
+      }
       break;
     case CommandType::Data:
       if (radioState != RadioState::EnrollmentHandoff) {

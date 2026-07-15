@@ -90,4 +90,5 @@ class SleepActivity final : public Activity {
   bool pagerRingChanged = false;
   char pagerBatchId[17] = {};
   unsigned long pagerStandaloneRenderAt = 0;
+  unsigned long pagerPhoneNextWindowAt = 0;
 };
