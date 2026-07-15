@@ -225,12 +225,12 @@ Xteink awake, change Xteink policy, send display content, or enroll a device.
 | Service UUID | `ca7b0001-6f6f-4d9f-9d78-3d9c4a9ed001` |
 | Payload characteristic | `ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001` |
 | Status characteristic | `ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001` |
-| Protocol status version | 6 |
+| Protocol status version | 7 |
 | Maximum authenticated write | 216 UTF-8 bytes |
 | Token, batch ID, event ID | 16 lowercase hexadecimal characters each |
 | Maximum time field | 11 UTF-8 bytes |
 | Maximum title field | 48 UTF-8 bytes |
-| Maximum body field | 92 UTF-8 bytes |
+| Maximum body field | Dynamic: remaining authenticated-write space, up to 151 UTF-8 bytes |
 
 The 216-byte transport limit is the X3 boundary verified with the current
 NimBLE configuration: a legacy `DATA` display body of 186 bytes succeeds and
@@ -281,12 +281,13 @@ END
 Android writes one command at a time and waits for its GATT write callback
 before writing the next. Complete-stack packets such as `XPSTACK1` are removed.
 
-Status v6 retains the v5 policy fields: `v`, `model`, `device_id`,
+Status v7 retains the v6 policy fields: `v`, `model`, `device_id`,
 `availability`, `configured_availability`, `interval_s`, `window_ms`,
-`enrolled`, `enroll_token`, and `next_window_ms`. It adds
-`schedule=utc_grid`. Clients ignore unknown fields. Link timing, connection
-state, power profile, and `last_write` may exist as diagnostics but are not
-synchronization inputs.
+`enrolled`, `enroll_token`, `next_window_ms`, and `schedule=utc_grid`. Version
+7 allows an `ADD` body to use bytes left unused by its time and title fields;
+the complete authenticated command must still remain at or below 216 bytes.
+Clients ignore unknown fields. Link timing, connection state, power profile,
+and `last_write` may exist as diagnostics but are not synchronization inputs.
 
 ## Event selection and delivery
 
@@ -326,8 +327,9 @@ it. There is no scrolling or wrapped continuation line.
 2. If text does not fit, Android removes trailing Unicode code points until the
    text plus ASCII `...` fits. It must not split a UTF-8 sequence or UTF-16
    surrogate pair.
-3. Android also trims to the protocol byte limits. Pixel and byte constraints
-   must both pass.
+3. Android also trims to the protocol byte limits. The body receives the bytes
+   left after the actual time and fitted title are encoded, up to 151 bytes.
+   Pixel and complete-command byte constraints must both pass.
 4. Android font measurement is intentionally conservative. Firmware performs
    the final measurement with the actual e-ink fonts and applies the same
    trailing `...` rule as a bounds-safety fallback.
@@ -354,7 +356,8 @@ No Pager behavior change is complete until the relevant gate passes:
    eviction all behave as specified.
 6. Replayed event ID does not repaint; a content update with a new event ID does.
 7. Authenticated writes of exactly 216 bytes pass; 217 bytes are rejected
-   before Android starts the write.
+   before Android starts the write. A narrow body may use the dynamic bytes
+   left by a short time/title instead of stopping at the former 92-byte cap.
 8. Long ASCII, multibyte UTF-8, emoji, and narrow title-plus-time cases end in
    `...` and remain inside the screen.
 9. Beat observes consecutive windows without timed scan gaps and resumes after

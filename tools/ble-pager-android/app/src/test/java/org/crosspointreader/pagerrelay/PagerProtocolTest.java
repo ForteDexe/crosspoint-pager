@@ -12,6 +12,7 @@ import java.util.List;
 public final class PagerProtocolTest {
     private static final String TOKEN = "0123456789abcdef";
     private static final String ID = "0011223344556677";
+    private static final String DEVICE_ID = "001122334455";
 
     @Test
     public void oneEventBatchIsBeginAddEnd() {
@@ -42,6 +43,27 @@ public final class PagerProtocolTest {
         PagerProtocol.WriteCommand command = new PagerProtocol.WriteCommand("ADD", data, ID);
         assertEquals(217, PagerProtocol.utf8Length(PagerProtocol.authenticatedCommand(command, TOKEN)));
         assertFalse(PagerProtocol.isValidAuthenticatedCommand(command, TOKEN));
+    }
+
+    @Test
+    public void shortTimeAndTitleDonateBytesToBody() {
+        assertEquals(151, PagerProtocol.maxAddMessageBytes("", ""));
+        assertEquals(140, PagerProtocol.maxAddMessageBytes("8:28 p.m.", "hi"));
+
+        String data = ID + "\n" + ID + "\n\n\n" + repeat('j', 151);
+        PagerProtocol.WriteCommand command = new PagerProtocol.WriteCommand("ADD", data, ID);
+        assertEquals(216, PagerProtocol.utf8Length(PagerProtocol.authenticatedCommand(command, TOKEN)));
+        assertTrue(PagerProtocol.isValidAuthenticatedCommand(command, TOKEN));
+    }
+
+    @Test
+    public void dynamicBodyRequiresProtocolVersionSeven() {
+        String policy = ";model=X3;device_id=" + DEVICE_ID
+                + ";availability=always;configured_availability=always"
+                + ";interval_s=0;window_ms=10000;schedule=utc_grid;enrolled=1";
+
+        assertFalse(PagerProtocol.parseStatus("v=6" + policy).usablePolicy);
+        assertTrue(PagerProtocol.parseStatus("v=7" + policy).usablePolicy);
     }
 
     private static String repeat(char value, int count) {

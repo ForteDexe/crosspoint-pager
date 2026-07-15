@@ -34,7 +34,9 @@ The app matches the firmware protocol exactly; the PC page keeps the legacy
   `ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001`
 - envelope: UTF-8 authenticated `DATA`, `BEGIN`, `ADD`, and `END` commands
 - maximum authenticated write: 216 bytes
-- `ADD` field limits: 11 bytes for time, 48 for title, and 92 for body
+- `ADD` field limits: 11 bytes for time, 48 for title, and a dynamic body
+  budget using the authenticated-write space left by the actual time and
+  fitted title (up to 151 bytes)
 
 Each delivery writes `BEGIN`, one bounded `ADD` per pending event, then `END`,
 waiting for each Android GATT write callback before advancing. Complete-stack

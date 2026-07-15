@@ -25,12 +25,13 @@ class SleepActivity final : public Activity {
 
  private:
   enum class PagerContentType : uint8_t { None, Message, NotificationStack };
+  static constexpr size_t PAGER_MAX_NOTIFICATION_MESSAGE_BYTES = 151;
 
   struct PagerNotification {
     char eventId[17] = {};
     char time[12] = {};
     char title[49] = {};
-    char message[93] = {};
+    char message[PAGER_MAX_NOTIFICATION_MESSAGE_BYTES + 1] = {};
   };
 
   void renderDefaultSleepScreen() const;

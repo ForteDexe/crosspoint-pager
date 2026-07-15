@@ -15,7 +15,7 @@ final class PagerProtocol {
     static final int CLIENT_TOKEN_BYTES = 16;
     static final int MAX_TIME_BYTES = 11;
     static final int MAX_TITLE_BYTES = 48;
-    static final int MAX_MESSAGE_BYTES = 92;
+    static final int MAX_MESSAGE_BYTES = 151;
     static final String DATA_PREFIX = "XPAGER1\nDATA\n";
     static final int AUTH_PAYLOAD_OVERHEAD_BYTES = DATA_PREFIX.length() + CLIENT_TOKEN_BYTES + 1;
     static final int MAX_DISPLAY_PAYLOAD_BYTES = MAX_PAYLOAD_BYTES - AUTH_PAYLOAD_OVERHEAD_BYTES;
@@ -118,7 +118,7 @@ final class PagerProtocol {
         boolean configuredMailbox = "mailbox".equals(configuredAvailability);
         boolean recognizedAvailability = "always".equals(availability) || "mailbox".equals(availability);
         boolean recognizedConfiguredAvailability = "always".equals(configuredAvailability) || configuredMailbox;
-        boolean usablePolicy = fields.intValue("v") >= 6 && "utc_grid".equals(fields.value("schedule"))
+        boolean usablePolicy = fields.intValue("v") >= 7 && "utc_grid".equals(fields.value("schedule"))
                 && ("X3".equals(fields.value("model")) || "X4".equals(fields.value("model")))
                 && isValidDeviceId(fields.value("device_id"))
                 && recognizedAvailability
@@ -132,6 +132,11 @@ final class PagerProtocol {
 
     static int utf8Length(String text) {
         return text.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    static int maxAddMessageBytes(String time, String title) {
+        int usedVariableBytes = utf8Length(time == null ? "" : time) + utf8Length(title == null ? "" : title);
+        return Math.max(0, MAX_MESSAGE_BYTES - usedVariableBytes);
     }
 
     static String formatStatus(String rawStatus) {

@@ -27,10 +27,12 @@ final class PagerTextFitter {
                 smallPaint::measureText, false);
         float titleWidth = Math.max(40f,
                 CONTENT_WIDTH_PX - smallPaint.measureText(safeTime) - TITLE_TIME_GAP_PX);
-        return new PagerProtocol.NotificationItem(eventId, safeTime,
-                fitSingleLine(title, PagerProtocol.MAX_TITLE_BYTES, titleWidth, titlePaint::measureText, true),
-                fitSingleLine(message, PagerProtocol.MAX_MESSAGE_BYTES, CONTENT_WIDTH_PX,
-                        smallPaint::measureText, true));
+        String safeTitle = fitSingleLine(
+                title, PagerProtocol.MAX_TITLE_BYTES, titleWidth, titlePaint::measureText, true);
+        int messageBytes = PagerProtocol.maxAddMessageBytes(safeTime, safeTitle);
+        String safeMessage = fitSingleLine(
+                message, messageBytes, CONTENT_WIDTH_PX, smallPaint::measureText, true);
+        return new PagerProtocol.NotificationItem(eventId, safeTime, safeTitle, safeMessage);
     }
 
     static String fitSingleLine(String value, int maxBytes, float maxWidth,

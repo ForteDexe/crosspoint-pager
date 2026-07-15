@@ -491,7 +491,8 @@ void SleepActivity::processPagerCommand(HalBlePager::Command& command) {
       char* const title = takePagerLine(cursor, end);
       char* const message = takePagerLine(cursor, end);
       if (!isPagerClientTokenValid(batchId) || !isPagerClientTokenValid(eventId) || time == nullptr || title == nullptr ||
-          message == nullptr || std::strlen(time) > 11 || std::strlen(title) > 48 || std::strlen(message) > 92 ||
+          message == nullptr || std::strlen(time) > 11 || std::strlen(title) > 48 ||
+          std::strlen(message) > PAGER_MAX_NOTIFICATION_MESSAGE_BYTES ||
           (*title == '\0' && *message == '\0')) {
         LOG_ERR("PAGER", "Invalid ADD command");
         return;
@@ -774,17 +775,15 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
           const int timeWidth = renderer.getTextWidth(SMALL_FONT_ID, notification.time);
           const int titleWidth = std::max(1, contentWidth - timeWidth - metrics.verticalSpacing);
           const int titleY = rowTop + rowPadding;
-          char fittedTitle[sizeof(notification.title)] = {};
-          char fittedMessage[sizeof(notification.message)] = {};
-          copyPagerEllipsizedText(notification.title, fittedTitle, sizeof(fittedTitle), UI_10_FONT_ID, titleWidth,
+          char fittedText[sizeof(notification.message)] = {};
+          copyPagerEllipsizedText(notification.title, fittedText, sizeof(notification.title), UI_10_FONT_ID, titleWidth,
                                   EpdFontFamily::BOLD);
-          copyPagerEllipsizedText(notification.message, fittedMessage, sizeof(fittedMessage), SMALL_FONT_ID,
-                                  contentWidth);
           renderer.drawText(SMALL_FONT_ID, contentRight - timeWidth, titleY, notification.time);
-          renderer.drawText(UI_10_FONT_ID, contentX, titleY, fittedTitle, true, EpdFontFamily::BOLD);
+          renderer.drawText(UI_10_FONT_ID, contentX, titleY, fittedText, true, EpdFontFamily::BOLD);
           const int messageY = titleY + renderer.getLineHeight(UI_10_FONT_ID) + 2;
           if (messageY + renderer.getLineHeight(SMALL_FONT_ID) <= rowBottom - rowPadding) {
-            renderer.drawText(SMALL_FONT_ID, contentX, messageY, fittedMessage);
+            copyPagerEllipsizedText(notification.message, fittedText, sizeof(fittedText), SMALL_FONT_ID, contentWidth);
+            renderer.drawText(SMALL_FONT_ID, contentX, messageY, fittedText);
           }
         }
         break;

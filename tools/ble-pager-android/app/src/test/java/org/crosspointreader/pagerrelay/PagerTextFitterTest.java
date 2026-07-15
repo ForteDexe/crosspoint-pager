@@ -26,4 +26,23 @@ public final class PagerTextFitterTest {
         assertEquals("Pager", PagerTextFitter.fitSingleLine(
                 "Pager", 48, 20f, String::length, true));
     }
+
+    @Test
+    public void wideGlyphsClampEarlierThanNarrowGlyphs() {
+        PagerTextFitter.WidthMeasurer proportionalWidth = text -> {
+            float width = 0f;
+            for (int index = 0; index < text.length(); index++) {
+                width += text.charAt(index) == 'm' ? 3f : 1f;
+            }
+            return width;
+        };
+
+        String wide = PagerTextFitter.fitSingleLine(
+                "mmmmmmmmmm", 48, 12f, proportionalWidth, true);
+        String narrow = PagerTextFitter.fitSingleLine(
+                "jjjjjjjjjj", 48, 12f, proportionalWidth, true);
+
+        assertEquals("mmm...", wide);
+        assertEquals("jjjjjjjjjj", narrow);
+    }
 }
