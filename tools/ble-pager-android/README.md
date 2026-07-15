@@ -44,7 +44,7 @@ packets are not used. The phone measures each title beside its time and each
 body against the content width, then adds trailing `...` without splitting a
 Unicode code point. Firmware applies an exact-font bounds check as a fallback.
 
-**Maximum notifications** accepts 1–10 and is stored across app restarts. The
+**Maximum notifications** accepts 1–11 and is stored across app restarts. The
 default is four. A stable event ID prevents an unchanged active notification
 from being queued again. Updated notifications receive a new event ID. Pending
 events and sent IDs survive app restarts; Xteink independently ignores event IDs
@@ -214,7 +214,7 @@ Install on a connected Android device with:
    connected while relay is active** before starting the relay.
 6. To relay notifications, open Android's **Notification access** screen from
    the app, allow *CrossPoint Pager*, choose **Maximum notifications** from
-   1–10, then enable **Notification relay**. The persistent Android
+   1–11, then enable **Notification relay**. The persistent Android
    notification means the relay is active.
 7. To test directly, enter Title, Message, and Footer and select **Send pager
    update**. Alternatively, select **Notification stack**, add up to the saved

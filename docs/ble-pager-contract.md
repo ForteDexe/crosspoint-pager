@@ -17,7 +17,7 @@ Pager does only the following:
 
 - receive a bounded feed of recent notification events from one selected
   Android device;
-- display 1-10 notifications without scrolling;
+- display 1-11 notifications without scrolling;
 - offer continuous availability for setup/debugging or periodic availability
   for lower-power delivery;
 - preserve normal reader behavior when Pager is inactive.
@@ -225,7 +225,7 @@ Xteink awake, change Xteink policy, send display content, or enroll a device.
 | Service UUID | `ca7b0001-6f6f-4d9f-9d78-3d9c4a9ed001` |
 | Payload characteristic | `ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001` |
 | Status characteristic | `ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001` |
-| Protocol status version | 7 |
+| Protocol status version | 8 |
 | Maximum authenticated write | 216 UTF-8 bytes |
 | Token, batch ID, event ID | 16 lowercase hexadecimal characters each |
 | Maximum time field | 11 UTF-8 bytes |
@@ -281,11 +281,12 @@ END
 Android writes one command at a time and waits for its GATT write callback
 before writing the next. Complete-stack packets such as `XPSTACK1` are removed.
 
-Status v7 retains the v6 policy fields: `v`, `model`, `device_id`,
+Status v8 retains the v7 policy fields: `v`, `model`, `device_id`,
 `availability`, `configured_availability`, `interval_s`, `window_ms`,
 `enrolled`, `enroll_token`, `next_window_ms`, and `schedule=utc_grid`. Version
-7 allows an `ADD` body to use bytes left unused by its time and title fields;
-the complete authenticated command must still remain at or below 216 bytes.
+7 allows an `ADD` body to use bytes left unused by its time and title fields.
+Version 8 raises the bounded notification limit from 10 to 11; the complete
+authenticated command must still remain at or below 216 bytes.
 Clients ignore unknown fields. Link timing, connection state, power profile,
 and `last_write` may exist as diagnostics but are not synchronization inputs.
 
@@ -303,10 +304,10 @@ and `last_write` may exist as diagnostics but are not synchronization inputs.
 5. Android records an event ID as sent only after its `ADD` callback succeeds.
    If a later command fails, unsent events remain pending; replay of an already
    accepted ID is harmless because firmware ignores that ID.
-6. Firmware keeps a fixed ring of 1-10 notifications. A new ID appends at the
+6. Firmware keeps a fixed ring of 1-11 notifications. A new ID appends at the
    bottom; when full, the oldest top entry is discarded. Existing IDs are
    ignored. Firmware never compares title/body content for duplication.
-7. `BEGIN` applies the 1-10 display limit and opens a batch. `END` closes the
+7. `BEGIN` applies the 1-11 display limit and opens a batch. `END` closes the
    matching batch and requests one render of the resulting ring.
 8. If `END` is missing, accepted events remain in the ring. At the bounded idle
    timeout, firmware renders once if the ring changed, disconnects, and follows
@@ -352,8 +353,8 @@ No Pager behavior change is complete until the relevant gate passes:
    without schedule drift after connection or timeout.
 4. Android restart followed by delivery using the restored policy and pending
    queue.
-5. Batch sizes 0, 1, and 10; missing `END`; mismatched batch ID; and ring
-   eviction all behave as specified.
+5. Batch sizes 0, 1, and 11; a requested limit of 12; missing `END`; mismatched
+   batch ID; and ring eviction all behave as specified.
 6. Replayed event ID does not repaint; a content update with a new event ID does.
 7. Authenticated writes of exactly 216 bytes pass; 217 bytes are rejected
    before Android starts the write. A narrow body may use the dynamic bytes

@@ -74,7 +74,7 @@ class SleepActivity final : public Activity {
   // panel resync and looks like a full refresh. Message cleanup still follows
   // Settings > Display > Refresh Frequency via nextPagerRefreshMode().
   HalDisplay::RefreshMode pagerRefreshMode = HalDisplay::FAST_REFRESH;
-  static constexpr uint8_t PAGER_MAX_NOTIFICATIONS = 10;
+  static constexpr uint8_t PAGER_MAX_NOTIFICATIONS = 11;
   static constexpr uint16_t PAGER_LOW_BATTERY_PERCENT = 25;
   // Above this threshold, a slow probe is enough to notice the transition;
   // at or below it, poll promptly so the 25% deep-sleep safeguard is timely.

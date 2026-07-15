@@ -8,7 +8,7 @@
     <string name="payload_byte_count">%1$d / %2$d UTF-8 bytes</string>
     <string name="notification_relay">Notification relay</string>
     <string name="maximum_notifications">Maximum notifications</string>
-    <string name="maximum_notifications_hint">1–10</string>
+    <string name="maximum_notifications_hint">1–11</string>
     <string name="maximum_notifications_summary">Newest notifications are shown first. Older notifications beyond this limit are discarded from the Pager snapshot.</string>
     <string name="beat_mode">Beat mode</string>
     <string name="debug_collapsed">Debug ▸</string>

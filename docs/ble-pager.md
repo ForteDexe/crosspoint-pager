@@ -139,13 +139,13 @@ pager policy** switch permits successful sends and Beat reads from the already
 selected reader to refresh the stored snapshot; it does not select devices,
 enroll a new reader, or start independent polling.
 
-The Android notification relay owns the notification stack. It reads Android's
-active notifications, sorts them newest first, and sends a complete replacement
-snapshot after a notification is posted or dismissed. Its persistent
-**Maximum notifications** setting is bounded to 1–10 (default four); older
-notifications beyond that count are discarded. Firmware stores only the latest
-290-byte snapshot and renders it without scrolling or allocating a second
-screen buffer.
+The Android notification relay owns event selection. It reads Android's active
+notifications, queues new or updated events, and sends `BEGIN`, one bounded
+`ADD` per event, then `END`. Its persistent **Maximum notifications** setting
+is bounded to 1–11 (default four). Firmware keeps an 11-entry fixed ring,
+ignores event IDs already present, discards the oldest entry when full, and
+renders the resulting stack without scrolling or allocating a second screen
+buffer.
 
 Periodic availability is still not true deep sleep: the X3 battery latch stays powered so the
 MCU can return from timer light sleep without rebooting. Current must still be

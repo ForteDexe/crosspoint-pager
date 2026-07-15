@@ -670,7 +670,7 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
   if (statusMailboxMode) {
     written = snprintf(
         destination, destinationSize,
-        "v=7;model=%s;device_id=%s;availability=mailbox;configured_availability=%s;interval_s=%lu;window_ms=%lu;schedule=utc_grid;"
+        "v=8;model=%s;device_id=%s;availability=mailbox;configured_availability=%s;interval_s=%lu;window_ms=%lu;schedule=utc_grid;"
         "connected=%u;enrolled=%u;"
         "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
         "next_window_ms=%lu",
@@ -682,7 +682,7 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
   } else {
     written = snprintf(
         destination, destinationSize,
-        "v=7;model=%s;device_id=%s;availability=always;configured_availability=%s;interval_s=%lu;window_ms=%lu;schedule=utc_grid;profile=%s;"
+        "v=8;model=%s;device_id=%s;availability=always;configured_availability=%s;interval_s=%lu;window_ms=%lu;schedule=utc_grid;profile=%s;"
         "connected=%u;enrolled=%u;"
         "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
         "next_window_ms=%lu",

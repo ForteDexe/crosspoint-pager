@@ -28,6 +28,14 @@ public final class PagerProtocolTest {
     }
 
     @Test
+    public void notificationLimitIsBoundedToEleven() {
+        List<PagerProtocol.WriteCommand> commands = PagerProtocol.notificationBatch(
+                Collections.emptyList(), 12, 1_752_595_680L);
+
+        assertTrue(commands.get(0).data.contains("\n11\n"));
+    }
+
+    @Test
     public void exactTransportBoundaryIsAccepted() {
         String data = ID + "\n" + ID + "\n" + repeat('t', 11) + "\n"
                 + repeat('a', 48) + "\n" + repeat('b', 92);
@@ -57,13 +65,15 @@ public final class PagerProtocolTest {
     }
 
     @Test
-    public void dynamicBodyRequiresProtocolVersionSeven() {
+    public void elevenNotificationsRequireProtocolVersionEight() {
         String policy = ";model=X3;device_id=" + DEVICE_ID
                 + ";availability=always;configured_availability=always"
                 + ";interval_s=0;window_ms=10000;schedule=utc_grid;enrolled=1";
 
         assertFalse(PagerProtocol.parseStatus("v=6" + policy).usablePolicy);
-        assertTrue(PagerProtocol.parseStatus("v=7" + policy).usablePolicy);
+        assertFalse(PagerProtocol.parseStatus("v=7" + policy).usablePolicy);
+        assertTrue(PagerProtocol.parseStatus("v=8" + policy).usablePolicy);
+        assertEquals(11, PagerProtocol.MAX_NOTIFICATION_COUNT);
     }
 
     private static String repeat(char value, int count) {

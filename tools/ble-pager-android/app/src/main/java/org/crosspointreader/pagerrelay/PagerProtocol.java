@@ -19,7 +19,7 @@ final class PagerProtocol {
     static final String DATA_PREFIX = "XPAGER1\nDATA\n";
     static final int AUTH_PAYLOAD_OVERHEAD_BYTES = DATA_PREFIX.length() + CLIENT_TOKEN_BYTES + 1;
     static final int MAX_DISPLAY_PAYLOAD_BYTES = MAX_PAYLOAD_BYTES - AUTH_PAYLOAD_OVERHEAD_BYTES;
-    static final int MAX_NOTIFICATION_COUNT = 10;
+    static final int MAX_NOTIFICATION_COUNT = 11;
     private static final AtomicLong ID_SEQUENCE = new AtomicLong(System.currentTimeMillis());
 
     private PagerProtocol() {}
@@ -118,7 +118,7 @@ final class PagerProtocol {
         boolean configuredMailbox = "mailbox".equals(configuredAvailability);
         boolean recognizedAvailability = "always".equals(availability) || "mailbox".equals(availability);
         boolean recognizedConfiguredAvailability = "always".equals(configuredAvailability) || configuredMailbox;
-        boolean usablePolicy = fields.intValue("v") >= 7 && "utc_grid".equals(fields.value("schedule"))
+        boolean usablePolicy = fields.intValue("v") >= 8 && "utc_grid".equals(fields.value("schedule"))
                 && ("X3".equals(fields.value("model")) || "X4".equals(fields.value("model")))
                 && isValidDeviceId(fields.value("device_id"))
                 && recognizedAvailability
