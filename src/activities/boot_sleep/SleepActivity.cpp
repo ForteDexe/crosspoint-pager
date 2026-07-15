@@ -544,16 +544,20 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 45, setupLabel);
   } else {
     switch (pagerContentType) {
-      case PagerContentType::NotificationStack:
+      case PagerContentType::NotificationStack: {
         if (pagerNotificationCount == 0) {
           renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, tr(STR_BLUETOOTH_WAITING), true,
                                     EpdFontFamily::BOLD);
           renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
           break;
         }
+        const int availableHeight = timelineBottom - timelineTop;
+        const int naturalRowHeight = renderer.getLineHeight(UI_10_FONT_ID) +
+                                     renderer.getLineHeight(SMALL_FONT_ID) * 2 + metrics.verticalSpacing;
+        const int rowHeight = std::max(1, std::min(naturalRowHeight, availableHeight / pagerNotificationCount));
         for (uint8_t index = 0; index < pagerNotificationCount; index++) {
-          const int rowTop = timelineTop + (timelineBottom - timelineTop) * index / pagerNotificationCount;
-          const int rowBottom = timelineTop + (timelineBottom - timelineTop) * (index + 1) / pagerNotificationCount;
+          const int rowTop = timelineTop + rowHeight * index;
+          const int rowBottom = std::min(timelineBottom, rowTop + rowHeight);
           const int rowPadding = std::min(metrics.verticalSpacing, std::max(2, (rowBottom - rowTop) / 8));
           const auto& notification = pagerNotifications[index];
           const int timeWidth = renderer.getTextWidth(SMALL_FONT_ID, notification.time);
@@ -567,6 +571,7 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
           drawPagerWrappedText(notification.message, SMALL_FONT_ID, contentX, messageY, contentWidth, messageLines);
         }
         break;
+      }
       case PagerContentType::Message: {
         int textY = timelineTop + metrics.verticalSpacing;
         textY = drawPagerWrappedText(pagerTitle, NOTOSANS_14_FONT_ID, contentX, textY, contentWidth, 2,
