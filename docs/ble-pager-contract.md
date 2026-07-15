@@ -1,6 +1,6 @@
 # BLE Pager contract
 
-Status: proposed recovery contract, based on `dcfd20f9`.
+Status: approved recovery source of truth, based on `dcfd20f9`.
 
 This file defines the intended behavior shared by the Xteink firmware and the
 Android companion. If code and this file disagree, the code is wrong. Change
