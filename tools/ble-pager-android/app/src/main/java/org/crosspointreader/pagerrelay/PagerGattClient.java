@@ -281,11 +281,10 @@ final class PagerGattClient {
 
     private long mailboxScanDelayMs() {
         long now = SystemClock.elapsedRealtime();
-        if (nextMailboxWindowAtMs > 0L && mailboxIntervalMs > 0L
-                && now >= nextMailboxWindowAtMs + mailboxWindowMs) {
-            long elapsedAfterWindowMs = now - (nextMailboxWindowAtMs + mailboxWindowMs);
-            long elapsedIntervals = elapsedAfterWindowMs / mailboxIntervalMs + 1L;
-            nextMailboxWindowAtMs += elapsedIntervals * mailboxIntervalMs;
+        long advancedWindowAtMs = MailboxSchedule.advancePastExpiredWindows(
+                nextMailboxWindowAtMs, mailboxIntervalMs, mailboxWindowMs, now);
+        if (advancedWindowAtMs != nextMailboxWindowAtMs) {
+            nextMailboxWindowAtMs = advancedWindowAtMs;
             persistMailboxSchedule();
         }
         long scanStartAt = nextMailboxWindowAtMs - MAILBOX_SCAN_LEAD_MS;
@@ -461,7 +460,8 @@ final class PagerGattClient {
             return;
         }
         lastMailboxWindowSeenAtMs = SystemClock.elapsedRealtime();
-        nextMailboxWindowAtMs = lastMailboxWindowSeenAtMs + mailboxIntervalMs;
+        nextMailboxWindowAtMs = MailboxSchedule.afterObservedWindow(
+                lastMailboxWindowSeenAtMs, mailboxIntervalMs);
         persistMailboxSchedule();
     }
 
@@ -477,11 +477,8 @@ final class PagerGattClient {
         mailboxIntervalMs = savedIntervalMs;
         mailboxWindowMs = savedWindowMs;
         long nowWallClockMs = System.currentTimeMillis();
-        if (nowWallClockMs >= savedNextWindowWallClockMs + savedWindowMs) {
-            long elapsedAfterWindowMs = nowWallClockMs - (savedNextWindowWallClockMs + savedWindowMs);
-            long elapsedIntervals = elapsedAfterWindowMs / savedIntervalMs + 1L;
-            savedNextWindowWallClockMs += elapsedIntervals * savedIntervalMs;
-        }
+        savedNextWindowWallClockMs = MailboxSchedule.advancePastExpiredWindows(
+                savedNextWindowWallClockMs, savedIntervalMs, savedWindowMs, nowWallClockMs);
         long delayMs = savedNextWindowWallClockMs - nowWallClockMs;
         nextMailboxWindowAtMs = SystemClock.elapsedRealtime()
                 + (delayMs >= 0L && delayMs <= savedIntervalMs ? delayMs : 0L);
@@ -898,7 +895,8 @@ final class PagerGattClient {
         if (startedMailboxHandoff) {
             mailboxScheduleKnown = true;
             lastMailboxWindowSeenAtMs = SystemClock.elapsedRealtime();
-            nextMailboxWindowAtMs = lastMailboxWindowSeenAtMs + mailboxWindowMs + mailboxIntervalMs;
+            nextMailboxWindowAtMs = MailboxSchedule.afterObservedWindow(
+                    lastMailboxWindowSeenAtMs, mailboxIntervalMs);
             persistMailboxSchedule();
         }
         if (policyWrite) {

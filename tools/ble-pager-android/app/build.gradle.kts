@@ -33,3 +33,7 @@ android.applicationVariants.all {
         (this as BaseVariantOutputImpl).outputFileName = "crosspoint-pager.apk"
     }
 }
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}

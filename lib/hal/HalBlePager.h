@@ -30,6 +30,11 @@ class HalBlePager {
     BatterySaver,
   };
 
+  enum class MailboxStart : uint8_t {
+    OpenWindow,
+    WaitForInterval,
+  };
+
   enum class WriteStatus : uint8_t {
     None,
     Accepted,
@@ -40,7 +45,8 @@ class HalBlePager {
   };
 
   bool begin(ConnectionMode connectionMode, ConnectionMode configuredConnectionMode, uint8_t mailboxIntervalMinutes,
-             NormalPowerProfile normalPowerProfile, bool clientEnrolled, const char* clientToken);
+             NormalPowerProfile normalPowerProfile, bool clientEnrolled, const char* clientToken,
+             MailboxStart mailboxStart);
   void end();
 
   // Starts a new screen session with no duplicate-comparison baseline. Radio

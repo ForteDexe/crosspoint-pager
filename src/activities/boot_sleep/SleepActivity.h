@@ -42,7 +42,7 @@ class SleepActivity final : public Activity {
   void checkPagerBatteryLevel(bool force = false);
   void runPagerMailboxSleep();
   void exitPager();
-  bool startPagerBle();
+  bool startPagerBle(HalBlePager::MailboxStart mailboxStart = HalBlePager::MailboxStart::OpenWindow);
   void persistPagerEnrollmentIfNeeded();
   void transitionPagerMailboxIfReady();
   HalDisplay::RefreshMode nextPagerRefreshMode();

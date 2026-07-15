@@ -177,7 +177,8 @@ HalBlePager blePager;
 bool HalBlePager::begin(const ConnectionMode connectionMode, const ConnectionMode requestedConfiguredConnectionMode,
                         const uint8_t mailboxIntervalMinutes,
                         const NormalPowerProfile requestedNormalPowerProfile, const bool requestedClientEnrolled,
-                        const char* requestedClientToken) {
+                        const char* requestedClientToken, const MailboxStart mailboxStart) {
+  const unsigned long now = millis();
   portENTER_CRITICAL(&payloadMutex);
   if (running) {
     portEXIT_CRITICAL(&payloadMutex);
@@ -199,15 +200,32 @@ bool HalBlePager::begin(const ConnectionMode connectionMode, const ConnectionMod
   connectionLatency = 0;
   supervisionTimeoutUnits = 0;
   mailboxIntervalMs = static_cast<unsigned long>(mailboxIntervalMinutes) * 60UL * 1000UL;
-  radioState = mailboxMode ? RadioState::MailboxWindow : RadioState::Normal;
-  receiveWindowStartedAt = millis();
-  nextMailboxWindowAt = 0;
+  bool waitForMailboxInterval = false;
+  radioState = RadioState::Normal;
+  if (mailboxMode) {
+    switch (mailboxStart) {
+      case MailboxStart::OpenWindow:
+        radioState = RadioState::MailboxWindow;
+        break;
+      case MailboxStart::WaitForInterval:
+        radioState = RadioState::MailboxWaiting;
+        waitForMailboxInterval = true;
+        break;
+    }
+  }
+  receiveWindowStartedAt = now;
+  nextMailboxWindowAt = waitForMailboxInterval ? now + mailboxIntervalMs : 0;
   connectionStartedAt = 0;
   disconnectAfterAt = 0;
   disconnectRequested = false;
   advertisingRestartRequested = false;
   connectionParamsUpdateRequested = false;
   portEXIT_CRITICAL(&payloadMutex);
+
+  if (waitForMailboxInterval) {
+    LOG_INF("BLE", "Pager mailbox waiting for first scheduled window");
+    return true;
+  }
 
   if (startRadio()) {
     return true;
@@ -304,10 +322,8 @@ bool HalBlePager::startRadio() {
     return false;
   }
 
-  const unsigned long now = millis();
   portENTER_CRITICAL(&payloadMutex);
   radioRunning = true;
-  receiveWindowStartedAt = now;
   advertisingRestartRequested = false;
   portEXIT_CRITICAL(&payloadMutex);
   LOG_INF("BLE", "Pager advertising started");
@@ -402,7 +418,7 @@ void HalBlePager::update() {
           }
         } else if (hasReached(now, receiveWindowStartedAt + RECEIVE_WINDOW_MS)) {
           radioState = RadioState::MailboxWaiting;
-          nextMailboxWindowAt = now + mailboxIntervalMs;
+          nextMailboxWindowAt = receiveWindowStartedAt + mailboxIntervalMs;
           stopAdvertising = true;
         }
         break;
@@ -523,7 +539,7 @@ bool HalBlePager::resumeMailboxWindow() {
                             hasReached(now, nextMailboxWindowAt);
   if (shouldResume) {
     radioState = RadioState::MailboxWindow;
-    receiveWindowStartedAt = now;
+    receiveWindowStartedAt = nextMailboxWindowAt;
   }
   portEXIT_CRITICAL(&payloadMutex);
 
@@ -537,7 +553,7 @@ bool HalBlePager::resumeMailboxWindow() {
 
   portENTER_CRITICAL(&payloadMutex);
   radioState = RadioState::MailboxWaiting;
-  nextMailboxWindowAt = now + mailboxIntervalMs;
+  nextMailboxWindowAt = receiveWindowStartedAt + mailboxIntervalMs;
   portEXIT_CRITICAL(&payloadMutex);
   return false;
 }
@@ -684,7 +700,6 @@ void HalBlePager::setConnected(const bool isConnected, const uint16_t newConnect
     disconnectRequested = false;
     if (mailboxMode) {
       radioState = RadioState::MailboxWindow;
-      receiveWindowStartedAt = now;
     } else {
       connectionParamsUpdateRequested = true;
     }
@@ -698,7 +713,7 @@ void HalBlePager::setConnected(const bool isConnected, const uint16_t newConnect
     connectionParamsUpdateRequested = false;
     if (mailboxMode) {
       radioState = RadioState::MailboxWaiting;
-      nextMailboxWindowAt = now + mailboxIntervalMs;
+      nextMailboxWindowAt = receiveWindowStartedAt + mailboxIntervalMs;
     } else if (radioState != RadioState::EnrollmentHandoff) {
       advertisingRestartRequested = true;
     }

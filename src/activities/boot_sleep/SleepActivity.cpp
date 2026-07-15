@@ -210,7 +210,7 @@ void SleepActivity::loop() {
   }
 }
 
-bool SleepActivity::startPagerBle() {
+bool SleepActivity::startPagerBle(const HalBlePager::MailboxStart mailboxStart) {
   const auto connectionMode =
       pagerMailboxMode ? HalBlePager::ConnectionMode::Mailbox : HalBlePager::ConnectionMode::Normal;
   const auto configuredConnectionMode =
@@ -219,8 +219,11 @@ bool SleepActivity::startPagerBle() {
           ? HalBlePager::ConnectionMode::Mailbox
           : HalBlePager::ConnectionMode::Normal;
   if (blePager.begin(connectionMode, configuredConnectionMode, SETTINGS.pagerMailboxIntervalMinutes,
-                     pagerNormalPowerProfile(), SETTINGS.pagerClientEnrolled != 0, SETTINGS.pagerClientToken)) {
-    powerManager.enablePagerLightSleep();
+                     pagerNormalPowerProfile(), SETTINGS.pagerClientEnrolled != 0, SETTINGS.pagerClientToken,
+                     mailboxStart)) {
+    if (blePager.isRadioRunning()) {
+      powerManager.enablePagerLightSleep();
+    }
     return true;
   }
 
@@ -254,7 +257,7 @@ void SleepActivity::transitionPagerMailboxIfReady() {
   powerManager.disablePagerLightSleep();
   blePager.end();
   pagerMailboxMode = true;
-  startPagerBle();
+  startPagerBle(HalBlePager::MailboxStart::WaitForInterval);
 }
 
 void SleepActivity::runPagerMailboxSleep() {
