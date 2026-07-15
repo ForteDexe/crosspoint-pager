@@ -41,6 +41,7 @@ import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.EnumMap;
 import java.util.List;
 
 public final class MainActivity extends Activity {
@@ -57,8 +58,10 @@ public final class MainActivity extends Activity {
     private Button addTestNotification;
     private Button removeTestNotification;
     private TextView byteCount;
-    private TextView status;
+    private TextView testStatus;
     private TextView policyStatus;
+    private TextView relayStatus;
+    private TextView beatStatus;
     private TextView statusLog;
     private TextView learnedMailboxTiming;
     private TextView pagerSummary;
@@ -91,17 +94,17 @@ public final class MainActivity extends Activity {
     private ArrayAdapter<String> deviceChoiceAdapter;
     private final List<PagerDeviceScanner.DeviceCandidate> discoveredDevices = new ArrayList<>();
     private final Handler countdownHandler = new Handler(Looper.getMainLooper());
-    private String sendCountdownPrefix;
-    private long sendCountdownAtMs;
-    private String policyCountdownPrefix;
-    private long policyCountdownAtMs;
+    private final EnumMap<UiStatusChannel, LiveStatusLine> liveStatusLines =
+            new EnumMap<>(UiStatusChannel.class);
     private final Runnable countdownRunnable = new Runnable() {
         @Override
         public void run() {
             long nowMs = SystemClock.elapsedRealtime();
-            boolean sendWaiting = updateCountdown(status, sendCountdownPrefix, sendCountdownAtMs, nowMs);
-            boolean policyWaiting = updateCountdown(policyStatus, policyCountdownPrefix, policyCountdownAtMs, nowMs);
-            if (sendWaiting || policyWaiting) {
+            boolean waiting = false;
+            for (LiveStatusLine line : liveStatusLines.values()) {
+                waiting |= updateCountdown(line, nowMs);
+            }
+            if (waiting) {
                 countdownHandler.postDelayed(this, 1000L);
             }
         }
@@ -121,7 +124,8 @@ public final class MainActivity extends Activity {
                         intent.getLongExtra(PagerRelayService.EXTRA_COUNTDOWN_AT_MS, 0L),
                         EventLogCategory.fromWireValue(
                                 intent.getStringExtra(PagerRelayService.EXTRA_EVENT_CATEGORY)),
-                        intent.getBooleanExtra(PagerRelayService.EXTRA_POLICY_STATUS, false));
+                        UiStatusChannel.fromWireValue(
+                                intent.getStringExtra(PagerRelayService.EXTRA_STATUS_CHANNEL)));
             }
         };
         updatePermissionStatus();
@@ -148,10 +152,7 @@ public final class MainActivity extends Activity {
         if (hasBluetoothPermissions()) {
             PagerRelayService.resumeEnabledModes(this);
         }
-        long nowMs = SystemClock.elapsedRealtime();
-        if (sendCountdownAtMs > nowMs || policyCountdownAtMs > nowMs) {
-            restartCountdownTicker();
-        }
+        restartCountdownTicker();
     }
 
     @Override
@@ -217,6 +218,7 @@ public final class MainActivity extends Activity {
         policyStatus = text("Pager policy refresh is idle.", 15, false);
         policyStatus.setPadding(0, dp(8), 0, 0);
         content.addView(policyStatus);
+        registerLiveStatus(UiStatusChannel.POLICY, policyStatus);
         autoUpdatePolicySwitch = switchControl(getString(R.string.auto_update_pager_policy),
                 RelayPreferences.isAutoUpdatePagerPolicy(this));
         autoUpdatePolicySwitch.setOnCheckedChangeListener((view, enabled) -> {
@@ -275,7 +277,7 @@ public final class MainActivity extends Activity {
             }
             if (!RelayPreferences.isPagerReadyForUse(this)) {
                 setControlSwitchChecked(notificationRelaySwitch, false);
-                status.setText(R.string.refresh_policy_before_relay);
+                relayStatus.setText(R.string.refresh_policy_before_relay);
                 return;
             }
             if (!hasBluetoothPermissions()) {
@@ -285,7 +287,7 @@ public final class MainActivity extends Activity {
             }
             if (!hasNotificationAccess()) {
                 setControlSwitchChecked(notificationRelaySwitch, false);
-                status.setText(R.string.notification_access_required);
+                relayStatus.setText(R.string.notification_access_required);
                 startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
                 return;
             }
@@ -293,6 +295,9 @@ public final class MainActivity extends Activity {
             NotificationRelayService.requestStackRefresh(this);
         });
         content.addView(notificationRelaySwitch);
+        relayStatus = text("Notification relay is idle.", 15, false);
+        content.addView(relayStatus);
+        registerLiveStatus(UiStatusChannel.RELAY, relayStatus);
 
         content.addView(text(getString(R.string.maximum_notifications), 16, true));
         maxNotifications = field(getString(R.string.maximum_notifications_hint), false);
@@ -339,7 +344,7 @@ public final class MainActivity extends Activity {
             }
             if (!RelayPreferences.isPagerReadyForUse(this)) {
                 setControlSwitchChecked(beatModeSwitch, false);
-                status.setText(R.string.refresh_policy_before_relay);
+                beatStatus.setText(R.string.refresh_policy_before_relay);
                 return;
             }
             if (!hasBluetoothPermissions()) {
@@ -350,6 +355,9 @@ public final class MainActivity extends Activity {
             PagerRelayService.startBeat(this);
         });
         debugContent.addView(beatModeSwitch);
+        beatStatus = text("Beat mode is idle.", 15, false);
+        debugContent.addView(beatStatus);
+        registerLiveStatus(UiStatusChannel.BEAT, beatStatus);
 
         TextView technicalHeading = text("BLE details", 20, true);
         technicalHeading.setPadding(0, dp(16), 0, 0);
@@ -422,9 +430,10 @@ public final class MainActivity extends Activity {
         });
         debugContent.addView(send);
 
-        status = text("Grant Bluetooth permissions, put the reader in Pager standby, then send a test update.", 15, false);
-        status.setPadding(0, dp(8), 0, 0);
-        debugContent.addView(status);
+        testStatus = text("Grant Bluetooth permissions, put the reader in Pager standby, then send a test update.", 15, false);
+        testStatus.setPadding(0, dp(8), 0, 0);
+        debugContent.addView(testStatus);
+        registerLiveStatus(UiStatusChannel.TEST, testStatus);
 
         TextView logHeading = text("Event log", 20, true);
         logHeading.setPadding(0, dp(16), 0, 0);
@@ -476,7 +485,7 @@ public final class MainActivity extends Activity {
     }
 
     private void recordStatus(String value, long targetCountdownAtMs, EventLogCategory category,
-                              boolean policyMessage) {
+                              UiStatusChannel channel) {
         if (value == null || value.isEmpty()) {
             return;
         }
@@ -484,22 +493,26 @@ public final class MainActivity extends Activity {
         updatePagerSummary();
         updateTechnicalStatus();
         updatePermissionStatus();
-        if (policyMessage && value.startsWith("Pager policy\n")) {
+        if (channel == UiStatusChannel.POLICY && value.startsWith("Pager policy")) {
             policyReceivedThisSession = true;
             policyRefreshMissed = false;
-        } else if (policyMessage && value.contains("Continuing policy scan.")) {
+        } else if (channel == UiStatusChannel.POLICY && value.contains("Continuing policy scan.")) {
             policyReceivedThisSession = false;
             policyRefreshMissed = true;
         }
         updateEnrollmentResetAdvice();
-        if (targetCountdownAtMs > 0L) {
-            startCountdown(value, targetCountdownAtMs, policyMessage);
-            return;
-        }
-        stopCountdown(policyMessage);
-        TextView destination = policyMessage ? policyStatus : status;
-        if (destination != null) {
-            destination.setText(value);
+        LiveStatusLine liveStatus = liveStatusLines.get(channel);
+        if (liveStatus != null) {
+            if (targetCountdownAtMs > 0L) {
+                liveStatus.countdownPrefix = value;
+                liveStatus.countdownAtMs = targetCountdownAtMs;
+                restartCountdownTicker();
+            } else {
+                liveStatus.countdownPrefix = null;
+                liveStatus.countdownAtMs = 0L;
+                liveStatus.view.setText(value);
+                restartCountdownTicker();
+            }
         }
         statusLines.add(0, new LogEntry(category,
                 String.format(java.util.Locale.US, "%tT  %s", new java.util.Date(), value)));
@@ -509,40 +522,22 @@ public final class MainActivity extends Activity {
         renderEventLog();
     }
 
-    private void startCountdown(String prefix, long targetCountdownAtMs, boolean policyMessage) {
-        if (policyMessage) {
-            policyCountdownPrefix = prefix;
-            policyCountdownAtMs = targetCountdownAtMs;
-        } else {
-            sendCountdownPrefix = prefix;
-            sendCountdownAtMs = targetCountdownAtMs;
-        }
-        restartCountdownTicker();
-    }
-
-    private void stopCountdown(boolean policyMessage) {
-        if (policyMessage) {
-            policyCountdownPrefix = null;
-            policyCountdownAtMs = 0L;
-        } else {
-            sendCountdownPrefix = null;
-            sendCountdownAtMs = 0L;
-        }
-        restartCountdownTicker();
-    }
-
     private void restartCountdownTicker() {
         countdownHandler.removeCallbacks(countdownRunnable);
         countdownHandler.post(countdownRunnable);
     }
 
-    private boolean updateCountdown(TextView destination, String prefix, long targetAtMs, long nowMs) {
-        if (destination == null || prefix == null || targetAtMs == 0L) {
+    private boolean updateCountdown(LiveStatusLine line, long nowMs) {
+        if (line.countdownPrefix == null || line.countdownAtMs == 0L) {
             return false;
         }
-        long remainingMs = Math.max(0L, targetAtMs - nowMs);
-        destination.setText(getString(R.string.status_countdown, prefix, countdownText(remainingMs)));
+        long remainingMs = Math.max(0L, line.countdownAtMs - nowMs);
+        line.view.setText(getString(R.string.status_countdown, line.countdownPrefix, countdownText(remainingMs)));
         return remainingMs > 0L;
+    }
+
+    private void registerLiveStatus(UiStatusChannel channel, TextView view) {
+        liveStatusLines.put(channel, new LiveStatusLine(view));
     }
 
     private String countdownText(long remainingMs) {
@@ -786,11 +781,11 @@ public final class MainActivity extends Activity {
             return;
         }
         if (!RelayPreferences.isPagerReadyForUse(this)) {
-            status.setText(R.string.refresh_policy_before_relay);
+            testStatus.setText(R.string.refresh_policy_before_relay);
             return;
         }
         updateOperationButtons(true, policyRetryActive);
-        PagerRelayService.send(this, payload);
+        PagerRelayService.sendTest(this, payload);
     }
 
     private void readPagerStatus() {
@@ -1131,6 +1126,16 @@ public final class MainActivity extends Activity {
         LogEntry(EventLogCategory category, String text) {
             this.category = category;
             this.text = text;
+        }
+    }
+
+    private static final class LiveStatusLine {
+        final TextView view;
+        String countdownPrefix;
+        long countdownAtMs;
+
+        LiveStatusLine(TextView view) {
+            this.view = view;
         }
     }
 

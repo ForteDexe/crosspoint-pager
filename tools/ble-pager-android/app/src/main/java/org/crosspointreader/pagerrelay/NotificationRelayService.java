@@ -114,7 +114,7 @@ public final class NotificationRelayService extends NotificationListenerService 
                 break;
             }
         }
-        PagerRelayService.send(this, PagerProtocol.notificationStackPayload(items));
+        PagerRelayService.sendRelay(this, PagerProtocol.notificationStackPayload(items));
     }
 
     private PagerProtocol.NotificationItem notificationItem(StatusBarNotification notification) {

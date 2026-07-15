@@ -54,10 +54,16 @@ access separately. If Xteink setup is open, **Refresh pager policy** stores the
 setup token locally, then writes a **Pager connection confirmed** title. That
 authenticated write enrolls the phone; Android derives the first expected
 mailbox window while Xteink acknowledges the write and completes the
-setup-to-mailbox handoff. Later refreshes send the same confirmation title when
-the app still has the enrolled token. After that, the relay writes notifications
-directly after connecting so periodic availability windows are not spent on a
-status read.
+setup-to-mailbox handoff. A successful GATT write response completes the manual
+policy refresh; the app does not immediately read status a second time while
+Xteink is changing availability. Later refreshes send the same confirmation
+title when the app still has the enrolled token. Normal Pager updates attempt
+to read `last_write` after sending so the app can report rejected or unchanged
+payloads. A successful write remains successful if Xteink closes the short
+mailbox link before that optional result read completes; the app reports that
+result details were unavailable instead of retrying an already delivered
+payload. After that, the relay writes notifications directly after connecting
+so periodic availability windows are not spent on a status read.
 
 ## Connection mode for battery testing
 
@@ -114,6 +120,11 @@ enrolls a device and does not start an independent scan.
 **Forget stored Xteink** removes the one local selection and its enrollment
 data. Beat Mode, BLE link details, the test sender, live send status, and the
 Event log remain under **Debug**.
+
+Each operation owns its live status line: policy refresh below **Refresh pager
+policy**, relay activity below **Notification relay**, Beat diagnostics below
+the Beat switch, and manual sends below **Send pager update**. Background relay
+or Beat events therefore cannot overwrite a Test page result.
 
 The **Beat mode** switch runs a bounded periodic BLE status read and appends
 each result to the in-app event log. Use it when validating whether Xteink ever

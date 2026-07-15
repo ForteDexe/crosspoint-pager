@@ -142,6 +142,11 @@ final class RelayPreferences {
                 .apply();
     }
 
+    static void setPagerEnrollmentConfirmed(Context context) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(PAGER_ENROLLED, true).apply();
+    }
+
     static void setPagerIdentity(Context context, PagerProtocol.PagerStatus status, String bluetoothAddress) {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
                 .putString(PAGER_MODEL, status.model)

@@ -28,7 +28,8 @@ public final class PagerRelayService extends Service {
     static final String EXTRA_EVENT_CATEGORY = "event_category";
     static final String EXTRA_SEND_RETRY_ACTIVE = "send_retry_active";
     static final String EXTRA_POLICY_RETRY_ACTIVE = "policy_retry_active";
-    static final String EXTRA_POLICY_STATUS = "policy_status";
+    static final String EXTRA_STATUS_CHANNEL = "status_channel";
+    private static final String EXTRA_SEND_CHANNEL = "send_channel";
     private static final String EXTRA_DEVICE_ADDRESS = "device_address";
     private static final String EXTRA_DEVICE_LABEL = "device_label";
     private static final String CHANNEL_ID = "pager_relay";
@@ -46,10 +47,19 @@ public final class PagerRelayService extends Service {
         context.startForegroundService(new Intent(context, PagerRelayService.class).setAction(ACTION_STOP_RELAY));
     }
 
-    static void send(Context context, String payload) {
+    static void sendTest(Context context, String payload) {
+        send(context, payload, UiStatusChannel.TEST);
+    }
+
+    static void sendRelay(Context context, String payload) {
+        send(context, payload, UiStatusChannel.RELAY);
+    }
+
+    private static void send(Context context, String payload, UiStatusChannel channel) {
         Intent intent = new Intent(context, PagerRelayService.class)
                 .setAction(ACTION_SEND)
-                .putExtra(EXTRA_PAYLOAD, payload);
+                .putExtra(EXTRA_PAYLOAD, payload)
+                .putExtra(EXTRA_SEND_CHANNEL, channel.wireValue());
         context.startForegroundService(intent);
     }
 
@@ -120,7 +130,8 @@ public final class PagerRelayService extends Service {
         if (ACTION_STOP_RELAY.equals(action)) {
             client.setKeepConnected(false);
             RelayPreferences.setEnabled(this, false);
-            publishStatus("Notification relay stopped.", 0L, EventLogCategory.NOTIFICATION_RELAY);
+            publishStatus("Notification relay stopped.", 0L, EventLogCategory.NOTIFICATION_RELAY,
+                    UiStatusChannel.RELAY);
             if (!RelayPreferences.isBeatEnabled(this)) {
                 stopSelf();
             }
@@ -129,10 +140,11 @@ public final class PagerRelayService extends Service {
         configureConnectionMode();
         if (ACTION_SEND.equals(action)) {
             String payload = intent.getStringExtra(EXTRA_PAYLOAD);
+            UiStatusChannel channel = UiStatusChannel.fromWireValue(intent.getStringExtra(EXTRA_SEND_CHANNEL));
             if (payload != null && PagerProtocol.isValidTestPayload(payload)) {
-                client.send(payload);
+                client.send(payload, channel == UiStatusChannel.RELAY ? UiStatusChannel.RELAY : UiStatusChannel.TEST);
             } else {
-                publishStatus("Pager payload is invalid.", 0L, EventLogCategory.NOTIFICATION_RELAY);
+                publishStatus("Pager payload is invalid.", 0L, EventLogCategory.NOTIFICATION_RELAY, channel);
             }
         } else if (ACTION_READ_STATUS.equals(action)) {
             client.readStatus();
@@ -150,10 +162,10 @@ public final class PagerRelayService extends Service {
                 client.holdConnection();
             } else if (RelayPreferences.shouldKeepConnected(this)) {
                 publishStatus("Keep-connected mode selected for test sends.", 0L,
-                        EventLogCategory.NOTIFICATION_RELAY);
+                        EventLogCategory.NOTIFICATION_RELAY, UiStatusChannel.TEST);
             } else {
                 publishStatus("Connection mode: connect per message.", 0L,
-                        EventLogCategory.NOTIFICATION_RELAY);
+                        EventLogCategory.NOTIFICATION_RELAY, UiStatusChannel.NONE);
             }
         } else if (ACTION_START_BEAT.equals(action)) {
             client.startBeat();
@@ -171,7 +183,8 @@ public final class PagerRelayService extends Service {
                 client.holdConnection();
             } else {
                 publishStatus(RelayPreferences.isEnabled(this) ? "Pager relay is ready." : "Pager test sender is ready.",
-                        0L, EventLogCategory.NOTIFICATION_RELAY);
+                        0L, EventLogCategory.NOTIFICATION_RELAY,
+                        RelayPreferences.isEnabled(this) ? UiStatusChannel.RELAY : UiStatusChannel.TEST);
             }
         }
         return RelayPreferences.isEnabled(this) || RelayPreferences.isBeatEnabled(this)
@@ -208,11 +221,18 @@ public final class PagerRelayService extends Service {
 
     private void publishStatus(String status, long countdownAtMs, EventLogCategory category) {
         publishStatus(status, countdownAtMs, category,
-                RelayPreferences.isSendRetryActive(this), RelayPreferences.isPolicyRetryActive(this), false);
+                RelayPreferences.isSendRetryActive(this), RelayPreferences.isPolicyRetryActive(this),
+                UiStatusChannel.NONE);
     }
 
     private void publishStatus(String status, long countdownAtMs, EventLogCategory category,
-                               boolean sendRetryActive, boolean policyRetryActive, boolean policyStatus) {
+                               UiStatusChannel channel) {
+        publishStatus(status, countdownAtMs, category,
+                RelayPreferences.isSendRetryActive(this), RelayPreferences.isPolicyRetryActive(this), channel);
+    }
+
+    private void publishStatus(String status, long countdownAtMs, EventLogCategory category,
+                               boolean sendRetryActive, boolean policyRetryActive, UiStatusChannel channel) {
         sendBroadcast(new Intent(ACTION_STATUS)
                 .setPackage(getPackageName())
                 .putExtra(EXTRA_STATUS, status)
@@ -220,7 +240,7 @@ public final class PagerRelayService extends Service {
                 .putExtra(EXTRA_EVENT_CATEGORY, category.wireValue())
                 .putExtra(EXTRA_SEND_RETRY_ACTIVE, sendRetryActive)
                 .putExtra(EXTRA_POLICY_RETRY_ACTIVE, policyRetryActive)
-                .putExtra(EXTRA_POLICY_STATUS, policyStatus));
+                .putExtra(EXTRA_STATUS_CHANNEL, channel.wireValue()));
         if (!RelayPreferences.isEnabled(this) && !RelayPreferences.isBeatEnabled(this)
                 && !sendRetryActive && !policyRetryActive && !client.hasHeldConnection()) {
             stopSelf();
