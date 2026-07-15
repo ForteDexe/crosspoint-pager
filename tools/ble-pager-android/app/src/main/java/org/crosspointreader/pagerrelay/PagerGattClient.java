@@ -31,8 +31,9 @@ final class PagerGattClient {
                       boolean testRetryActive, boolean policyRetryActive, UiStatusChannel channel);
     }
 
-    private static final long SCAN_TIMEOUT_MS = 12_000;
+    private static final long DEFAULT_SCAN_TIMEOUT_MS = 12_000;
     private static final long MAILBOX_SCAN_LEAD_MS = 10_000;
+    private static final long MAILBOX_LATE_TOLERANCE_MS = 10_000;
     private static final long MAILBOX_MAX_PENDING_MS = 75L * 60L * 1000L;
     private static final long BEAT_BUSY_RETRY_MS = 3_000;
     private static final long POLICY_SCAN_RETRY_MS = 1_000;
@@ -556,7 +557,12 @@ final class PagerGattClient {
         scanning = true;
         status("Searching for the selected Xteink...");
         adapter.getBluetoothLeScanner().startScan(Collections.singletonList(filter), settings, scanCallback);
-        handler.postDelayed(scanTimeout, SCAN_TIMEOUT_MS);
+        long scanTimeoutMs = DEFAULT_SCAN_TIMEOUT_MS;
+        if (mailboxAttemptActive && mailboxScheduleKnown) {
+            scanTimeoutMs = Math.max(scanTimeoutMs,
+                    MAILBOX_SCAN_LEAD_MS + mailboxWindowMs + MAILBOX_LATE_TOLERANCE_MS);
+        }
+        handler.postDelayed(scanTimeout, scanTimeoutMs);
     }
 
     @SuppressLint("MissingPermission")
@@ -577,7 +583,7 @@ final class PagerGattClient {
             if (retryPolicyAfterMiss("CrossPoint Pager was not found.")) {
                 return;
             }
-            if (retryMailboxAfterMiss("Mailbox window was not found.")) {
+            if (retryMailboxAfterMiss("The selected Xteink was not seen during the scheduled mailbox window.")) {
                 return;
             }
             fail("CrossPoint Pager was not found. Put it in Pager standby and try again.");
@@ -768,7 +774,7 @@ final class PagerGattClient {
         byte[] bytes = PagerProtocol.authenticatedCommand(command, token).getBytes(StandardCharsets.UTF_8);
         status(currentOperation == Operation.CONFIRM_POLICY
                 ? "Confirming Pager connection..."
-                : "Sending Pager batch " + (currentCommandIndex + 1) + "/" + currentBatch.size() + "...");
+                : "Sending Pager command " + (currentCommandIndex + 1) + "/" + currentBatch.size() + "...");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             int result = gatt == null
                     ? BluetoothStatusCodes.ERROR_UNKNOWN

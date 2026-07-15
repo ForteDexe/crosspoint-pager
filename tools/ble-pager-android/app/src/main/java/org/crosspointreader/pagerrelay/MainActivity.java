@@ -190,6 +190,7 @@ public final class MainActivity extends Activity {
 
         TextView heading = text(getString(R.string.app_name), 24, true);
         content.addView(heading);
+        content.addView(text("Build: " + BuildConfig.PAGER_BUILD_ID, 13, false));
         content.addView(text("Supports Xteink models X3 and X4 running CrossPoint Pager firmware.", 15, true));
         content.addView(text("Forwards new Android notifications to one explicitly selected Xteink. It does not use traditional Bluetooth pairing, retain notification content, or send notifications over the internet.", 15, false));
 

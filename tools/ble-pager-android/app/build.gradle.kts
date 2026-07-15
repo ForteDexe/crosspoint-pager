@@ -4,6 +4,25 @@ plugins {
     id("com.android.application")
 }
 
+val repositoryRoot = rootProject.projectDir.resolve("../..").canonicalFile
+
+fun gitValue(vararg arguments: String): String = runCatching {
+    providers.exec {
+        workingDir(repositoryRoot)
+        commandLine("git", *arguments)
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("").ifEmpty { "unknown" }
+
+fun quotedBuildConfigValue(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val gitBranch = gitValue("rev-parse", "--abbrev-ref", "HEAD")
+val gitCommit = gitValue("rev-parse", "--short=8", "HEAD")
+val gitStatus = gitValue("status", "--porcelain")
+val gitDirty = gitStatus != "unknown" && gitStatus.isNotEmpty()
+val pagerBuildId = "0.1.0-dev-$gitBranch-$gitCommit${if (gitDirty) "-dirty" else ""}"
+
 android {
     namespace = "org.crosspointreader.pagerrelay"
     compileSdk = 35
@@ -14,6 +33,11 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "PAGER_BUILD_ID", quotedBuildConfigValue(pagerBuildId))
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
