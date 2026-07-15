@@ -40,9 +40,10 @@ The app matches the firmware protocol exactly; the PC page keeps the legacy
 
 Each delivery writes `BEGIN`, one bounded `ADD` per pending event, then `END`,
 waiting for each Android GATT write callback before advancing. Complete-stack
-packets are not used. The phone measures each title beside its time and each
-body against the content width, then adds trailing `...` without splitting a
-Unicode code point. Firmware applies an exact-font bounds check as a fallback.
+packets are not used. The phone measures each title beside its time and enforces
+the byte budget without splitting a Unicode code point. It sends body text
+unchanged within that budget; firmware applies the authoritative exact-font
+body clamp for the current screen geometry.
 
 **Maximum notifications** accepts 1–11 and is stored across app restarts. The
 default is four. A stable event ID prevents an unchanged active notification

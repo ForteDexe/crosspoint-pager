@@ -323,18 +323,17 @@ Each notification uses one title line beside its time and one body line below
 it. There is no scrolling or wrapped continuation line.
 
 1. Before encoding `ADD`, Android measures the title against the remaining
-   title-line width after the time and gap, and measures the body against the
-   full content width.
-2. If text does not fit, Android removes trailing Unicode code points until the
-   text plus ASCII `...` fits. It must not split a UTF-8 sequence or UTF-16
-   surrogate pair.
-3. Android also trims to the protocol byte limits. The body receives the bytes
-   left after the actual time and fitted title are encoded, up to 151 bytes.
-   Pixel and complete-command byte constraints must both pass.
-4. Android adds a bounded 24-pixel body allowance to compensate for its
-   sans-serif font overestimating narrow glyphs relative to the firmware's
-   Noto Sans 8 font. Firmware performs the authoritative final measurement
-   with the actual e-ink font and applies the same trailing `...` rule.
+   title-line width after the time and gap. The title keeps this phone-side
+   preview because its current fit matches the firmware.
+2. Android does not pixel-trim the body. It cleans control characters and sends
+   the body unchanged when it fits the transport byte budget.
+3. Android trims both fields to their protocol byte limits without splitting a
+   UTF-8 sequence or UTF-16 surrogate pair. The body receives the bytes left
+   after the actual time and fitted title are encoded, up to 151 bytes, and
+   receives trailing ASCII `...` only when that byte budget is exceeded.
+4. Firmware performs the authoritative body measurement with the actual e-ink
+   font, size, orientation, and content width. It removes trailing Unicode code
+   points and adds `...` only when the received body exceeds the screen width.
 5. Xteink renders the complete changed ring once at `END`, once at missing-END
    timeout, or once after the standalone-ADD debounce. It does not repaint for
    duplicate event IDs or an empty batch.
@@ -360,8 +359,8 @@ No Pager behavior change is complete until the relevant gate passes:
 7. Authenticated writes of exactly 216 bytes pass; 217 bytes are rejected
    before Android starts the write. A narrow body may use the dynamic bytes
    left by a short time/title instead of stopping at the former 92-byte cap.
-8. Long ASCII, multibyte UTF-8, emoji, and narrow title-plus-time cases end in
-   `...` and remain inside the screen.
+8. Long ASCII, multibyte UTF-8, emoji, and narrow title-plus-time cases remain
+   within transport and screen bounds; body ellipsis is decided by firmware.
 9. Beat observes consecutive windows without timed scan gaps and resumes after
    a foreground operation.
 10. Power-button exit restores the book/Home destination and refresh cycle.

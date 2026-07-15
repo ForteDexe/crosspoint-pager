@@ -47,12 +47,17 @@ public final class PagerTextFitterTest {
     }
 
     @Test
-    public void bodyCalibrationUsesSixMoreNarrowGlyphs() {
-        PagerTextFitter.WidthMeasurer fourPixelGlyphs = text -> text.length() * 4f;
+    public void bodyWithinTransportBudgetIsNotPixelTrimmed() {
+        String body = repeat('j', 120);
 
-        String fitted = PagerTextFitter.fitBodyLine(repeat('j', 120), 151, fourPixelGlyphs);
+        assertEquals(body, PagerTextFitter.fitBodyForTransport(body, 151));
+    }
 
-        assertEquals(repeat('j', 108) + "...", fitted);
+    @Test
+    public void bodyBeyondTransportBudgetIsEllipsized() {
+        String fitted = PagerTextFitter.fitBodyForTransport(repeat('j', 152), 151);
+
+        assertEquals(repeat('j', 148) + "...", fitted);
     }
 
     private static String repeat(char value, int count) {
