@@ -6,18 +6,32 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/portmacro.h>
 
-// Minimal, opt-in BLE GATT receiver for the pager sleep screen. The
-// characteristic value is an authenticated UTF-8 pager packet:
-// "XPAGER1\nDATA\n<16-hex-token>\n<title>\nmessage\nfooter".
+// Minimal, opt-in BLE GATT receiver for the pager sleep screen. It authenticates
+// and queues bounded DATA or BEGIN/ADD/END commands; rendering stays in the
+// activity layer.
 class HalBlePager;
 extern HalBlePager blePager;
 
 class HalBlePager {
  public:
-  static constexpr size_t MAX_PAYLOAD_BYTES = 320;
+  static constexpr size_t MAX_PAYLOAD_BYTES = 216;
   static constexpr size_t MAX_STATUS_BYTES = 320;
   static constexpr size_t CLIENT_TOKEN_BYTES = 16;
-  static constexpr size_t AUTH_PAYLOAD_OVERHEAD_BYTES = 30;
+  static constexpr size_t COMMAND_DATA_BYTES = 187;
+  static constexpr size_t COMMAND_QUEUE_CAPACITY = 12;
+
+  enum class CommandType : uint8_t {
+    Data,
+    Begin,
+    Add,
+    End,
+  };
+
+  struct Command {
+    CommandType type = CommandType::Data;
+    uint16_t length = 0;
+    char data[COMMAND_DATA_BYTES + 1] = {};
+  };
 
   enum class ConnectionMode : uint8_t {
     Normal,
@@ -46,12 +60,8 @@ class HalBlePager {
 
   bool begin(ConnectionMode connectionMode, ConnectionMode configuredConnectionMode, uint8_t mailboxIntervalMinutes,
              NormalPowerProfile normalPowerProfile, bool clientEnrolled, const char* clientToken,
-             MailboxStart mailboxStart);
+             MailboxStart mailboxStart, unsigned long firstMailboxDelayMs = 0);
   void end();
-
-  // Starts a new screen session with no duplicate-comparison baseline. Radio
-  // restarts inside the same Pager session deliberately do not call this.
-  void resetPayloadHistory();
 
   // Advances the bounded connection/window state machine from the activity
   // loop. This deliberately keeps NimBLE operations out of its callbacks.
@@ -62,13 +72,14 @@ class HalBlePager {
   bool isConnected() const;
   bool isMailboxWaiting() const;
   unsigned long getMailboxSleepDurationMs() const;
+  void alignNextMailboxWindow(unsigned long delayMs);
   bool suspendMailboxRadio();
   bool resumeMailboxWindow();
 
-  // Copies the newest received payload and consumes its pending-update flag.
-  // Returns zero when no changed payload is waiting or the destination is too
-  // small. The result is always NUL-terminated when non-zero.
-  size_t takePayload(char* destination, size_t destinationSize);
+  // Consumes the oldest authenticated command. Android serializes writes, and
+  // this fixed queue holds one maximum BEGIN + 10 ADD + END transaction without
+  // allocating in the NimBLE callback.
+  bool takeCommand(Command& destination);
 
   // Produces a read-only, semicolon-delimited policy/status value for the
   // companion app. Xteink remains the configuration authority.
@@ -104,9 +115,9 @@ class HalBlePager {
   bool startRadio();
 
   mutable portMUX_TYPE payloadMutex = portMUX_INITIALIZER_UNLOCKED;
-  char payload[MAX_PAYLOAD_BYTES + 1] = {};
-  size_t payloadLength = 0;
-  bool payloadPending = false;
+  Command commandQueue[COMMAND_QUEUE_CAPACITY] = {};
+  uint8_t commandQueueHead = 0;
+  uint8_t commandQueueCount = 0;
   bool clientEnrolled = false;
   char clientToken[CLIENT_TOKEN_BYTES + 1] = {};
   bool enrollmentPending = false;
@@ -127,7 +138,9 @@ class HalBlePager {
   unsigned long receiveWindowStartedAt = 0;
   unsigned long nextMailboxWindowAt = 0;
   unsigned long connectionStartedAt = 0;
+  unsigned long lastCommandAt = 0;
   unsigned long disconnectAfterAt = 0;
+  bool commandBatchOpen = false;
   bool disconnectRequested = false;
   bool advertisingRestartRequested = false;
   bool connectionParamsUpdateRequested = false;

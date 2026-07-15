@@ -13,10 +13,14 @@ namespace {
 constexpr char SERVICE_UUID[] = "ca7b0001-6f6f-4d9f-9d78-3d9c4a9ed001";
 constexpr char PAYLOAD_UUID[] = "ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001";
 constexpr char STATUS_UUID[] = "ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001";
-constexpr char PAYLOAD_PREFIX[] = "XPAGER1\nDATA\n";
-constexpr size_t PAYLOAD_PREFIX_BYTES = sizeof(PAYLOAD_PREFIX) - 1;
+constexpr char PROTOCOL_PREFIX[] = "XPAGER1\n";
+constexpr char DATA_OPERATION[] = "DATA\n";
+constexpr char BEGIN_OPERATION[] = "BEGIN\n";
+constexpr char ADD_OPERATION[] = "ADD\n";
+constexpr char END_OPERATION[] = "END\n";
 constexpr unsigned long RECEIVE_WINDOW_MS = 2UL * 1000UL;
-constexpr unsigned long CONNECTION_TIMEOUT_MS = 3UL * 1000UL;
+constexpr unsigned long CONNECTION_TIMEOUT_MS = 10UL * 1000UL;
+constexpr unsigned long BATCH_IDLE_TIMEOUT_MS = 2UL * 1000UL;
 constexpr unsigned long PAYLOAD_ACK_GRACE_MS = 250UL;
 constexpr unsigned long ENROLLMENT_ACK_GRACE_MS = 1UL * 1000UL;
 // Units are 0.625 ms. The NimBLE default is a 30-60 ms fast interval;
@@ -105,6 +109,12 @@ bool tokenMatches(const char* expected, const uint8_t* provided) {
   return expected[HalBlePager::CLIENT_TOKEN_BYTES] == '\0';
 }
 
+bool operationMatches(const uint8_t* data, const size_t length, const char* operation, const size_t operationLength) {
+  const size_t prefixLength = sizeof(PROTOCOL_PREFIX) - 1;
+  return length >= prefixLength + operationLength && std::memcmp(data, PROTOCOL_PREFIX, prefixLength) == 0 &&
+         std::memcmp(data + prefixLength, operation, operationLength) == 0;
+}
+
 void copyToken(char* destination, const char* source) {
   if (destination == nullptr) {
     return;
@@ -177,7 +187,8 @@ HalBlePager blePager;
 bool HalBlePager::begin(const ConnectionMode connectionMode, const ConnectionMode requestedConfiguredConnectionMode,
                         const uint8_t mailboxIntervalMinutes,
                         const NormalPowerProfile requestedNormalPowerProfile, const bool requestedClientEnrolled,
-                        const char* requestedClientToken, const MailboxStart mailboxStart) {
+                        const char* requestedClientToken, const MailboxStart mailboxStart,
+                        const unsigned long firstMailboxDelayMs) {
   const unsigned long now = millis();
   portENTER_CRITICAL(&payloadMutex);
   if (running) {
@@ -194,6 +205,8 @@ bool HalBlePager::begin(const ConnectionMode connectionMode, const ConnectionMod
   enrollmentPending = false;
   pendingEnrollmentToken[0] = '\0';
   lastWriteStatus = WriteStatus::None;
+  commandQueueHead = 0;
+  commandQueueCount = 0;
   connected = false;
   connectionHandle = 0;
   connectionIntervalUnits = 0;
@@ -214,9 +227,11 @@ bool HalBlePager::begin(const ConnectionMode connectionMode, const ConnectionMod
     }
   }
   receiveWindowStartedAt = now;
-  nextMailboxWindowAt = waitForMailboxInterval ? now + mailboxIntervalMs : 0;
+  nextMailboxWindowAt = waitForMailboxInterval ? now + firstMailboxDelayMs : 0;
   connectionStartedAt = 0;
+  lastCommandAt = 0;
   disconnectAfterAt = 0;
+  commandBatchOpen = false;
   disconnectRequested = false;
   advertisingRestartRequested = false;
   connectionParamsUpdateRequested = false;
@@ -347,6 +362,8 @@ void HalBlePager::end() {
   enrollmentPending = false;
   pendingEnrollmentToken[0] = '\0';
   lastWriteStatus = WriteStatus::None;
+  commandQueueHead = 0;
+  commandQueueCount = 0;
   connected = false;
   connectionHandle = 0;
   connectionIntervalUnits = 0;
@@ -354,7 +371,9 @@ void HalBlePager::end() {
   supervisionTimeoutUnits = 0;
   mailboxIntervalMs = 0;
   radioState = RadioState::Normal;
+  lastCommandAt = 0;
   disconnectAfterAt = 0;
+  commandBatchOpen = false;
   disconnectRequested = false;
   advertisingRestartRequested = false;
   connectionParamsUpdateRequested = false;
@@ -364,14 +383,6 @@ void HalBlePager::end() {
     NimBLEDevice::deinit(true);
   }
   LOG_INF("BLE", "Pager stopped");
-}
-
-void HalBlePager::resetPayloadHistory() {
-  portENTER_CRITICAL(&payloadMutex);
-  payload[0] = '\0';
-  payloadLength = 0;
-  payloadPending = false;
-  portEXIT_CRITICAL(&payloadMutex);
 }
 
 bool HalBlePager::isRunning() const {
@@ -410,8 +421,11 @@ void HalBlePager::update() {
         if (connected) {
           const bool shouldDisconnectAfterPayload =
               disconnectAfterAt != 0 && hasReached(now, disconnectAfterAt);
+          const bool batchIdleTimedOut =
+              commandBatchOpen && lastCommandAt != 0 && hasReached(now, lastCommandAt + BATCH_IDLE_TIMEOUT_MS);
           const bool connectionTimedOut = hasReached(now, connectionStartedAt + CONNECTION_TIMEOUT_MS);
-          if ((shouldDisconnectAfterPayload || connectionTimedOut) && !disconnectRequested) {
+          if ((shouldDisconnectAfterPayload || batchIdleTimedOut || connectionTimedOut) && !disconnectRequested) {
+            commandBatchOpen = false;
             disconnectRequested = true;
             disconnectConnection = true;
             disconnectHandle = connectionHandle;
@@ -430,6 +444,18 @@ void HalBlePager::update() {
   } else {
     switch (radioState) {
       case RadioState::Normal:
+        if (connected) {
+          const bool shouldDisconnectAfterPayload = disconnectAfterAt != 0 && hasReached(now, disconnectAfterAt);
+          const bool batchIdleTimedOut =
+              commandBatchOpen && lastCommandAt != 0 && hasReached(now, lastCommandAt + BATCH_IDLE_TIMEOUT_MS);
+          const bool connectionTimedOut = hasReached(now, connectionStartedAt + CONNECTION_TIMEOUT_MS);
+          if ((shouldDisconnectAfterPayload || batchIdleTimedOut || connectionTimedOut) && !disconnectRequested) {
+            commandBatchOpen = false;
+            disconnectRequested = true;
+            disconnectConnection = true;
+            disconnectHandle = connectionHandle;
+          }
+        }
         if (connected && connectionParamsUpdateRequested) {
           connectionParamsUpdateRequested = false;
           updateConnectionParams = true;
@@ -536,8 +562,11 @@ bool HalBlePager::resumeMailboxWindow() {
   const unsigned long now = millis();
   portENTER_CRITICAL(&payloadMutex);
   const bool shouldResume = running && !radioRunning && mailboxMode && radioState == RadioState::MailboxWaiting &&
-                            hasReached(now, nextMailboxWindowAt);
+                             hasReached(now, nextMailboxWindowAt);
   if (shouldResume) {
+    while (mailboxIntervalMs != 0 && hasReached(now, nextMailboxWindowAt + mailboxIntervalMs)) {
+      nextMailboxWindowAt += mailboxIntervalMs;
+    }
     radioState = RadioState::MailboxWindow;
     receiveWindowStartedAt = nextMailboxWindowAt;
   }
@@ -558,22 +587,28 @@ bool HalBlePager::resumeMailboxWindow() {
   return false;
 }
 
-size_t HalBlePager::takePayload(char* destination, size_t destinationSize) {
-  if (destination == nullptr || destinationSize < MAX_PAYLOAD_BYTES + 1) {
-    return 0;
-  }
-
+bool HalBlePager::takeCommand(Command& destination) {
   portENTER_CRITICAL(&payloadMutex);
-  if (!payloadPending) {
+  if (commandQueueCount == 0) {
     portEXIT_CRITICAL(&payloadMutex);
-    return 0;
+    return false;
   }
 
-  std::memcpy(destination, payload, payloadLength + 1);
-  const size_t result = payloadLength;
-  payloadPending = false;
+  destination = commandQueue[commandQueueHead];
+  commandQueueHead = static_cast<uint8_t>((commandQueueHead + 1) % COMMAND_QUEUE_CAPACITY);
+  commandQueueCount--;
   portEXIT_CRITICAL(&payloadMutex);
-  return result;
+  return true;
+}
+
+void HalBlePager::alignNextMailboxWindow(const unsigned long delayMs) {
+  const unsigned long now = millis();
+  portENTER_CRITICAL(&payloadMutex);
+  if (running && mailboxMode && mailboxIntervalMs != 0) {
+    nextMailboxWindowAt = now + delayMs;
+    receiveWindowStartedAt = nextMailboxWindowAt - mailboxIntervalMs;
+  }
+  portEXIT_CRITICAL(&payloadMutex);
 }
 
 size_t HalBlePager::takeEnrollmentToken(char* destination, size_t destinationSize) {
@@ -635,7 +670,7 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
   if (statusMailboxMode) {
     written = snprintf(
         destination, destinationSize,
-        "v=5;model=%s;device_id=%s;availability=mailbox;configured_availability=%s;interval_s=%lu;window_ms=%lu;"
+        "v=6;model=%s;device_id=%s;availability=mailbox;configured_availability=%s;interval_s=%lu;window_ms=%lu;schedule=utc_grid;"
         "connected=%u;enrolled=%u;"
         "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
         "next_window_ms=%lu",
@@ -647,7 +682,7 @@ size_t HalBlePager::copyStatus(char* destination, const size_t destinationSize) 
   } else {
     written = snprintf(
         destination, destinationSize,
-        "v=5;model=%s;device_id=%s;availability=always;configured_availability=%s;interval_s=%lu;window_ms=%lu;profile=%s;"
+        "v=6;model=%s;device_id=%s;availability=always;configured_availability=%s;interval_s=%lu;window_ms=%lu;schedule=utc_grid;profile=%s;"
         "connected=%u;enrolled=%u;"
         "enroll_token=%s;last_write=%s;conn_interval_units=%u;conn_latency=%u;conn_timeout_units=%u;"
         "next_window_ms=%lu",
@@ -696,7 +731,9 @@ void HalBlePager::setConnected(const bool isConnected, const uint16_t newConnect
     connectionLatency = latency;
     supervisionTimeoutUnits = newSupervisionTimeoutUnits;
     connectionStartedAt = now;
+    lastCommandAt = 0;
     disconnectAfterAt = 0;
+    commandBatchOpen = false;
     disconnectRequested = false;
     if (mailboxMode) {
       radioState = RadioState::MailboxWindow;
@@ -708,7 +745,9 @@ void HalBlePager::setConnected(const bool isConnected, const uint16_t newConnect
     connectionIntervalUnits = 0;
     connectionLatency = 0;
     supervisionTimeoutUnits = 0;
+    lastCommandAt = 0;
     disconnectAfterAt = 0;
+    commandBatchOpen = false;
     disconnectRequested = false;
     connectionParamsUpdateRequested = false;
     if (mailboxMode) {
@@ -737,22 +776,31 @@ void HalBlePager::storePayload(const uint8_t* data, const size_t length) {
     return;
   }
 
-  const size_t tokenOffset = PAYLOAD_PREFIX_BYTES;
-  const size_t payloadOffset = PAYLOAD_PREFIX_BYTES + CLIENT_TOKEN_BYTES + 1;
-  const bool hasProtocolFrame =
-      length > payloadOffset && std::memcmp(data, PAYLOAD_PREFIX, PAYLOAD_PREFIX_BYTES) == 0 &&
-      data[PAYLOAD_PREFIX_BYTES + CLIENT_TOKEN_BYTES] == '\n' && isHexToken(data + tokenOffset);
-  const uint8_t* displayPayload = hasProtocolFrame ? data + payloadOffset : nullptr;
-  const size_t displayPayloadLength = hasProtocolFrame ? length - payloadOffset : 0;
+  CommandType commandType = CommandType::Data;
+  size_t operationLength = 0;
+  if (operationMatches(data, length, DATA_OPERATION, sizeof(DATA_OPERATION) - 1)) {
+    commandType = CommandType::Data;
+    operationLength = sizeof(DATA_OPERATION) - 1;
+  } else if (operationMatches(data, length, BEGIN_OPERATION, sizeof(BEGIN_OPERATION) - 1)) {
+    commandType = CommandType::Begin;
+    operationLength = sizeof(BEGIN_OPERATION) - 1;
+  } else if (operationMatches(data, length, ADD_OPERATION, sizeof(ADD_OPERATION) - 1)) {
+    commandType = CommandType::Add;
+    operationLength = sizeof(ADD_OPERATION) - 1;
+  } else if (operationMatches(data, length, END_OPERATION, sizeof(END_OPERATION) - 1)) {
+    commandType = CommandType::End;
+    operationLength = sizeof(END_OPERATION) - 1;
+  }
+
+  const size_t tokenOffset = sizeof(PROTOCOL_PREFIX) - 1 + operationLength;
+  const size_t commandDataOffset = tokenOffset + CLIENT_TOKEN_BYTES + 1;
+  const bool hasProtocolFrame = operationLength != 0 && length >= commandDataOffset &&
+                                data[tokenOffset + CLIENT_TOKEN_BYTES] == '\n' && isHexToken(data + tokenOffset);
+  const size_t commandDataLength = hasProtocolFrame ? length - commandDataOffset : 0;
 
   const unsigned long now = millis();
   portENTER_CRITICAL(&payloadMutex);
-  if (mailboxMode && connected) {
-    disconnectAfterAt = now + PAYLOAD_ACK_GRACE_MS;
-    disconnectRequested = false;
-  }
-
-  if (!hasProtocolFrame) {
+  if (!hasProtocolFrame || commandDataLength == 0 || commandDataLength > COMMAND_DATA_BYTES) {
     lastWriteStatus = WriteStatus::Invalid;
     portEXIT_CRITICAL(&payloadMutex);
     return;
@@ -763,8 +811,20 @@ void HalBlePager::storePayload(const uint8_t* data, const size_t length) {
     return;
   }
 
-  const bool payloadChanged =
-      payloadLength != displayPayloadLength || std::memcmp(payload, displayPayload, displayPayloadLength) != 0;
+  if (commandQueueCount >= COMMAND_QUEUE_CAPACITY) {
+    lastWriteStatus = WriteStatus::Invalid;
+    portEXIT_CRITICAL(&payloadMutex);
+    LOG_ERR("BLE", "Pager command queue full");
+    return;
+  }
+
+  Command& command = commandQueue[(commandQueueHead + commandQueueCount) % COMMAND_QUEUE_CAPACITY];
+  command.type = commandType;
+  command.length = static_cast<uint16_t>(commandDataLength);
+  std::memcpy(command.data, data + commandDataOffset, commandDataLength);
+  command.data[commandDataLength] = '\0';
+  commandQueueCount++;
+
   if (!clientEnrolled) {
     clientEnrolled = true;
     enrollmentPending = true;
@@ -777,14 +837,30 @@ void HalBlePager::storePayload(const uint8_t* data, const size_t length) {
       disconnectRequested = false;
     }
   } else {
-    lastWriteStatus = payloadChanged ? WriteStatus::Accepted : WriteStatus::Unchanged;
+    lastWriteStatus = WriteStatus::Accepted;
   }
 
-  if (payloadChanged) {
-    std::memcpy(payload, displayPayload, displayPayloadLength);
-    payload[displayPayloadLength] = '\0';
-    payloadLength = displayPayloadLength;
-    payloadPending = true;
+  lastCommandAt = now;
+  switch (commandType) {
+    case CommandType::Begin:
+      commandBatchOpen = true;
+      disconnectAfterAt = 0;
+      break;
+    case CommandType::Add:
+      if (!commandBatchOpen) {
+        disconnectAfterAt = now + PAYLOAD_ACK_GRACE_MS;
+      }
+      break;
+    case CommandType::End:
+      commandBatchOpen = false;
+      disconnectAfterAt = now + PAYLOAD_ACK_GRACE_MS;
+      break;
+    case CommandType::Data:
+      if (radioState != RadioState::EnrollmentHandoff) {
+        disconnectAfterAt = now + PAYLOAD_ACK_GRACE_MS;
+      }
+      break;
   }
+  disconnectRequested = false;
   portEXIT_CRITICAL(&payloadMutex);
 }

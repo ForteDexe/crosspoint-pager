@@ -12,6 +12,7 @@ class HalClock {
   bool _available = false;
   mutable uint8_t _cachedHour = 0;
   mutable uint8_t _cachedMinute = 0;
+  mutable uint8_t _cachedSecond = 0;
   mutable bool _hasCachedTime = false;
   mutable unsigned long _lastPollMs = 0;
 
@@ -27,6 +28,11 @@ class HalClock {
   // Get current hour (0-23) and minute (0-59).
   // Returns false if RTC is not available.
   bool getTime(uint8_t& hour, uint8_t& minute) const;
+
+  // Get current UTC time including seconds. Cached reads are advanced with
+  // millis(), so callers can align short radio windows without polling I2C on
+  // every activity loop.
+  bool getTime(uint8_t& hour, uint8_t& minute, uint8_t& second) const;
 
   // Format time into a caller-provided buffer.
   // 24h mode produces "HH:MM" (needs >=6 bytes); 12h mode produces "H:MM AM"/"HH:MM PM" (needs >=9 bytes).

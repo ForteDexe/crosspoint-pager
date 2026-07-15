@@ -27,9 +27,10 @@ class SleepActivity final : public Activity {
   enum class PagerContentType : uint8_t { None, Message, NotificationStack };
 
   struct PagerNotification {
-    const char* time = "";
-    const char* title = "";
-    const char* message = "";
+    char eventId[17] = {};
+    char time[12] = {};
+    char title[49] = {};
+    char message[93] = {};
   };
 
   void renderDefaultSleepScreen() const;
@@ -45,9 +46,15 @@ class SleepActivity final : public Activity {
   bool startPagerBle(HalBlePager::MailboxStart mailboxStart = HalBlePager::MailboxStart::OpenWindow);
   void persistPagerEnrollmentIfNeeded();
   void transitionPagerMailboxIfReady();
+  void processPagerCommands();
+  void processPagerCommand(HalBlePager::Command& command);
+  void finishPagerBatch();
+  void requestPagerRingRender();
   HalDisplay::RefreshMode nextPagerRefreshMode();
   void renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) const;
-  void updatePagerText(char* payload, size_t length);
+  void updatePagerMessage(char* payload, size_t length);
+  void copyPagerEllipsizedText(const char* source, char* destination, size_t destinationSize, int fontId,
+                               int maxWidth, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   int drawPagerWrappedText(const char* text, int fontId, int x, int y, int maxWidth, int maxLines,
                            EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
 
@@ -73,12 +80,14 @@ class SleepActivity final : public Activity {
   static constexpr uint16_t PAGER_LOW_BATTERY_POLL_START_PERCENT = 40;
   static constexpr unsigned long PAGER_HEALTHY_BATTERY_PROBE_MS = 15UL * 60UL * 1000UL;
   static constexpr unsigned long PAGER_LOW_BATTERY_PROBE_MS = 5UL * 60UL * 1000UL;
-  // Reused for every transfer so the 321-byte GATT payload never sits in a
-  // hot-path stack frame.
-  char pagerPayload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
-  const char* pagerTitle = "";
-  const char* pagerMessage = "";
-  const char* pagerFooter = "";
+  char pagerTitle[49] = {};
+  char pagerMessage[93] = {};
+  char pagerFooter[49] = {};
   PagerNotification pagerNotifications[PAGER_MAX_NOTIFICATIONS] = {};
   uint8_t pagerNotificationCount = 0;
+  uint8_t pagerNotificationLimit = PAGER_MAX_NOTIFICATIONS;
+  bool pagerBatchOpen = false;
+  bool pagerRingChanged = false;
+  char pagerBatchId[17] = {};
+  unsigned long pagerStandaloneRenderAt = 0;
 };

@@ -43,17 +43,38 @@ void HalClock::begin() {
   LOG_INF("CLK", "DS3231 RTC found");
 
   // Prime the cache with an initial read
-  uint8_t h, m;
-  getTime(h, m);
+  uint8_t h, m, s;
+  getTime(h, m, s);
 }
 
 bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
+  uint8_t second = 0;
+  return getTime(hour, minute, second);
+}
+
+bool HalClock::getTime(uint8_t& hour, uint8_t& minute, uint8_t& second) const {
   if (!_available) return false;
 
   const unsigned long now = millis();
-  if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS) {
+  const auto useCachedTime = [this, now, &hour, &minute, &second]() {
+    const unsigned long elapsedSeconds = _lastPollMs == 0 ? 0 : (now - _lastPollMs) / 1000UL;
+    const unsigned long secondsOfDay =
+        (static_cast<unsigned long>(_cachedHour) * 60UL + _cachedMinute) * 60UL + _cachedSecond + elapsedSeconds;
+    _cachedHour = static_cast<uint8_t>((secondsOfDay / 3600UL) % 24UL);
+    _cachedMinute = static_cast<uint8_t>((secondsOfDay / 60UL) % 60UL);
+    _cachedSecond = static_cast<uint8_t>(secondsOfDay % 60UL);
+    _lastPollMs = now;
     hour = _cachedHour;
     minute = _cachedMinute;
+    second = _cachedSecond;
+  };
+  if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS) {
+    const unsigned long elapsedSeconds = (now - _lastPollMs) / 1000UL;
+    const unsigned long secondsOfDay =
+        (static_cast<unsigned long>(_cachedHour) * 60UL + _cachedMinute) * 60UL + _cachedSecond + elapsedSeconds;
+    hour = static_cast<uint8_t>((secondsOfDay / 3600UL) % 24UL);
+    minute = static_cast<uint8_t>((secondsOfDay / 60UL) % 60UL);
+    second = static_cast<uint8_t>(secondsOfDay % 60UL);
     return true;
   }
 
@@ -62,24 +83,21 @@ bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
   Wire.write(DS3231_SEC_REG);
   if (Wire.endTransmission(false) != 0) {
     if (!_hasCachedTime) return false;
-    _lastPollMs = now;
-    hour = _cachedHour;
-    minute = _cachedMinute;
+    useCachedTime();
     return true;
   }
   Wire.requestFrom(I2C_ADDR_DS3231, (uint8_t)3);
   if (Wire.available() < 3) {
     if (!_hasCachedTime) return false;
-    _lastPollMs = now;
-    hour = _cachedHour;
-    minute = _cachedMinute;
+    useCachedTime();
     return true;
   }
 
-  Wire.read();  // seconds — not needed
+  const uint8_t rawSecond = Wire.read();
   const uint8_t rawMin = Wire.read();
   const uint8_t rawHour = Wire.read();
 
+  _cachedSecond = bcdToDec(rawSecond & 0x7F);
   _cachedMinute = bcdToDec(rawMin & 0x7F);
   // Handle 12/24h mode: bit 6 high = 12h mode
   if (rawHour & 0x40) {
@@ -97,6 +115,7 @@ bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
 
   hour = _cachedHour;
   minute = _cachedMinute;
+  second = _cachedSecond;
   return true;
 }
 
@@ -145,6 +164,7 @@ bool HalClock::writeTimeToRTC(uint8_t hour, uint8_t minute, uint8_t second) {
   _lastPollMs = 0;
   _cachedHour = hour;
   _cachedMinute = minute;
+  _cachedSecond = second;
   _hasCachedTime = true;
   return true;
 }

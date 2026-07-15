@@ -4,6 +4,7 @@
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalBlePager.h>
+#include <HalClock.h>
 #include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "CrossPointSettings.h"
@@ -25,7 +27,8 @@
 
 namespace {
 static_assert(HalBlePager::CLIENT_TOKEN_BYTES == CrossPointSettings::PAGER_CLIENT_TOKEN_BYTES,
-              "Pager BLE and settings token sizes must match");
+               "Pager BLE and settings token sizes must match");
+constexpr unsigned long PAGER_STANDALONE_DEBOUNCE_MS = 350UL;
 
 HalBlePager::NormalPowerProfile pagerNormalPowerProfile() {
   switch (SETTINGS.pagerNormalPowerProfile) {
@@ -102,7 +105,12 @@ void SleepActivity::onEnter() {
     if (pagerLowBatteryDetected) {
       return;
     }
-    blePager.resetPayloadHistory();
+    pagerNotificationCount = 0;
+    pagerNotificationLimit = PAGER_MAX_NOTIFICATIONS;
+    pagerBatchOpen = false;
+    pagerRingChanged = false;
+    pagerBatchId[0] = '\0';
+    pagerStandaloneRenderAt = 0;
     ensurePagerClientToken();
     pagerMailboxMode = SETTINGS.pagerClientEnrolled != 0 &&
                        SETTINGS.pagerConnectionMode == CrossPointSettings::PAGER_MAILBOX;
@@ -113,7 +121,9 @@ void SleepActivity::onEnter() {
     // The controller must be initialized before automatic light sleep is
     // enabled. Its BLE wake source then keeps advertising and GATT events
     // alive while Pager otherwise sleeps.
-    startPagerBle();
+    const auto mailboxStart = pagerMailboxMode && halClock.isAvailable() ? HalBlePager::MailboxStart::WaitForInterval
+                                                                         : HalBlePager::MailboxStart::OpenWindow;
+    startPagerBle(mailboxStart);
     renderPagerSleepScreen(pagerRefreshMode);
     return;
   }
@@ -190,24 +200,70 @@ void SleepActivity::loop() {
 
   blePager.update();
   persistPagerEnrollmentIfNeeded();
+  processPagerCommands();
+  if (pagerBatchOpen && !blePager.isConnected()) {
+    finishPagerBatch();
+  }
+  if (!pagerBatchOpen && pagerStandaloneRenderAt != 0 &&
+      static_cast<long>(millis() - pagerStandaloneRenderAt) >= 0) {
+    pagerStandaloneRenderAt = 0;
+    requestPagerRingRender();
+  }
   transitionPagerMailboxIfReady();
   if (pagerMailboxMode && blePager.isMailboxWaiting()) {
     runPagerMailboxSleep();
     return;
   }
+}
 
-  const size_t payloadLength = blePager.takePayload(pagerPayload, sizeof(pagerPayload));
-  if (payloadLength > 0) {
-    // The screen will render below, so refresh the header's battery reading at
-    // the same time without scheduling a battery-only e-ink update.
-    checkPagerBatteryLevel(true);
-    if (pagerLowBatteryDetected) {
-      return;
-    }
-    updatePagerText(pagerPayload, payloadLength);
-    pagerRefreshMode = nextPagerRefreshMode();
-    requestUpdate();
+char* takePagerLine(char*& cursor, char* const end) {
+  if (cursor >= end) {
+    return nullptr;
   }
+  char* const line = cursor;
+  while (cursor < end && *cursor != '\n') {
+    cursor++;
+  }
+  if (cursor < end) {
+    *cursor++ = '\0';
+  }
+  return line;
+}
+
+void sanitizePagerField(char* field) {
+  if (field == nullptr) {
+    return;
+  }
+  for (char* character = field; *character != '\0'; character++) {
+    if (static_cast<unsigned char>(*character) < 0x20) {
+      *character = ' ';
+    }
+  }
+}
+
+bool copyPagerField(char* destination, const size_t destinationSize, char* source) {
+  if (destination == nullptr || destinationSize == 0 || source == nullptr) {
+    return false;
+  }
+  sanitizePagerField(source);
+  const size_t length = std::strlen(source);
+  if (length >= destinationSize) {
+    return false;
+  }
+  std::memcpy(destination, source, length + 1);
+  return true;
+}
+
+bool isDecimalField(const char* value) {
+  if (value == nullptr || *value == '\0') {
+    return false;
+  }
+  for (const char* character = value; *character != '\0'; character++) {
+    if (*character < '0' || *character > '9') {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool SleepActivity::startPagerBle(const HalBlePager::MailboxStart mailboxStart) {
@@ -218,9 +274,21 @@ bool SleepActivity::startPagerBle(const HalBlePager::MailboxStart mailboxStart) 
               powerManager.canUsePagerMailboxLightSleep()
           ? HalBlePager::ConnectionMode::Mailbox
           : HalBlePager::ConnectionMode::Normal;
+  unsigned long firstMailboxDelayMs = 0;
+  if (pagerMailboxMode && mailboxStart == HalBlePager::MailboxStart::WaitForInterval) {
+    uint8_t hour = 0;
+    uint8_t minute = 0;
+    uint8_t second = 0;
+    if (halClock.getTime(hour, minute, second)) {
+      const unsigned long intervalSeconds = static_cast<unsigned long>(SETTINGS.pagerMailboxIntervalMinutes) * 60UL;
+      const unsigned long secondsWithinHour = static_cast<unsigned long>(minute) * 60UL + second;
+      const unsigned long remainder = secondsWithinHour % intervalSeconds;
+      firstMailboxDelayMs = (remainder == 0 ? 0 : intervalSeconds - remainder) * 1000UL;
+    }
+  }
   if (blePager.begin(connectionMode, configuredConnectionMode, SETTINGS.pagerMailboxIntervalMinutes,
                      pagerNormalPowerProfile(), SETTINGS.pagerClientEnrolled != 0, SETTINGS.pagerClientToken,
-                     mailboxStart)) {
+                     mailboxStart, firstMailboxDelayMs)) {
     if (blePager.isRadioRunning()) {
       powerManager.enablePagerLightSleep();
     }
@@ -346,77 +414,203 @@ HalDisplay::RefreshMode SleepActivity::nextPagerRefreshMode() {
   return HalDisplay::FAST_REFRESH;
 }
 
-void SleepActivity::updatePagerText(char* payload, const size_t length) {
-  char* cursor = payload;
-  char* const end = payload + length;
-  pagerNotificationCount = 0;
+void SleepActivity::processPagerCommands() {
+  HalBlePager::Command command;
+  while (blePager.takeCommand(command)) {
+    processPagerCommand(command);
+  }
+}
 
-  const auto takeLine = [&cursor, end]() -> char* {
-    if (cursor >= end) {
-      return nullptr;
-    }
-    char* const line = cursor;
-    while (cursor < end && *cursor != '\n') {
-      cursor++;
-    }
-    if (cursor < end) {
-      *cursor++ = '\0';
-    }
-    return line;
-  };
-  const auto sanitizeField = [](char* field) {
-    if (field == nullptr) {
+void SleepActivity::processPagerCommand(HalBlePager::Command& command) {
+  char* cursor = command.data;
+  char* const end = command.data + command.length;
+
+  switch (command.type) {
+    case HalBlePager::CommandType::Data:
+      updatePagerMessage(command.data, command.length);
+      checkPagerBatteryLevel(true);
+      if (!pagerLowBatteryDetected) {
+        pagerRefreshMode = nextPagerRefreshMode();
+        requestUpdate();
+      }
+      return;
+
+    case HalBlePager::CommandType::Begin: {
+      char* const batchId = takePagerLine(cursor, end);
+      char* const limitText = takePagerLine(cursor, end);
+      char* const epochText = takePagerLine(cursor, end);
+      if (!isPagerClientTokenValid(batchId) || !isDecimalField(limitText) || !isDecimalField(epochText)) {
+        LOG_ERR("PAGER", "Invalid BEGIN command");
+        return;
+      }
+      const unsigned long requestedLimit = std::strtoul(limitText, nullptr, 10);
+      if (requestedLimit < 1 || requestedLimit > PAGER_MAX_NOTIFICATIONS) {
+        LOG_ERR("PAGER", "Invalid notification limit");
+        return;
+      }
+      pagerNotificationLimit = static_cast<uint8_t>(requestedLimit);
+      std::memcpy(pagerBatchId, batchId, sizeof(pagerBatchId));
+      pagerBatchOpen = true;
+      pagerStandaloneRenderAt = 0;
+
+      while (pagerNotificationCount > pagerNotificationLimit) {
+        std::memmove(pagerNotifications, pagerNotifications + 1,
+                     sizeof(PagerNotification) * (pagerNotificationCount - 1));
+        pagerNotificationCount--;
+        pagerRingChanged = true;
+      }
+
+      if (!halClock.isAvailable()) {
+        const unsigned long epochSeconds = std::strtoul(epochText, nullptr, 10);
+        const unsigned long intervalSeconds = static_cast<unsigned long>(SETTINGS.pagerMailboxIntervalMinutes) * 60UL;
+        const unsigned long remainder = epochSeconds % intervalSeconds;
+        const unsigned long delaySeconds = remainder == 0 ? intervalSeconds : intervalSeconds - remainder;
+        blePager.alignNextMailboxWindow(delaySeconds * 1000UL);
+      }
       return;
     }
-    for (char* character = field; *character != '\0'; character++) {
-      if (static_cast<unsigned char>(*character) < 0x20) {
-        *character = ' ';
-      }
-    }
-  };
 
-  char* const firstLine = takeLine();
-  if (firstLine != nullptr && std::strcmp(firstLine, "XPSTACK1") == 0) {
-    pagerContentType = PagerContentType::NotificationStack;
-    while (pagerNotificationCount < PAGER_MAX_NOTIFICATIONS) {
-      char* const line = takeLine();
-      if (line == nullptr) {
-        break;
+    case HalBlePager::CommandType::Add: {
+      char* const batchId = takePagerLine(cursor, end);
+      char* const eventId = takePagerLine(cursor, end);
+      char* const time = takePagerLine(cursor, end);
+      char* const title = takePagerLine(cursor, end);
+      char* const message = takePagerLine(cursor, end);
+      if (!isPagerClientTokenValid(batchId) || !isPagerClientTokenValid(eventId) || time == nullptr || title == nullptr ||
+          message == nullptr || std::strlen(time) > 11 || std::strlen(title) > 48 || std::strlen(message) > 92 ||
+          (*title == '\0' && *message == '\0')) {
+        LOG_ERR("PAGER", "Invalid ADD command");
+        return;
       }
-      char* const firstSeparator = std::strchr(line, '\t');
-      if (firstSeparator == nullptr) {
-        continue;
+      if (pagerBatchOpen && std::strcmp(batchId, pagerBatchId) != 0) {
+        LOG_ERR("PAGER", "ADD batch ID mismatch");
+        return;
       }
-      *firstSeparator = '\0';
-      char* const secondSeparator = std::strchr(firstSeparator + 1, '\t');
-      if (secondSeparator == nullptr) {
-        continue;
+      for (uint8_t index = 0; index < pagerNotificationCount; index++) {
+        if (std::strcmp(pagerNotifications[index].eventId, eventId) == 0) {
+          return;
+        }
       }
-      *secondSeparator = '\0';
 
-      char* const time = line;
-      char* const title = firstSeparator + 1;
-      char* const message = secondSeparator + 1;
-      sanitizeField(time);
-      sanitizeField(title);
-      sanitizeField(message);
-      if (*title == '\0' && *message == '\0') {
-        continue;
+      if (pagerNotificationCount >= pagerNotificationLimit) {
+        std::memmove(pagerNotifications, pagerNotifications + 1,
+                     sizeof(PagerNotification) * (pagerNotificationCount - 1));
+        pagerNotificationCount--;
       }
-      pagerNotifications[pagerNotificationCount++] = PagerNotification{time, title, message};
+      auto& notification = pagerNotifications[pagerNotificationCount];
+      if (!copyPagerField(notification.eventId, sizeof(notification.eventId), eventId) ||
+          !copyPagerField(notification.time, sizeof(notification.time), time) ||
+          !copyPagerField(notification.title, sizeof(notification.title), title) ||
+          !copyPagerField(notification.message, sizeof(notification.message), message)) {
+        LOG_ERR("PAGER", "ADD field exceeds fixed storage");
+        return;
+      }
+      pagerNotificationCount++;
+      pagerContentType = PagerContentType::NotificationStack;
+      pagerRingChanged = true;
+      if (!pagerBatchOpen) {
+        pagerStandaloneRenderAt = millis() + PAGER_STANDALONE_DEBOUNCE_MS;
+      }
+      return;
     }
+
+    case HalBlePager::CommandType::End: {
+      char* const batchId = takePagerLine(cursor, end);
+      if (!pagerBatchOpen || !isPagerClientTokenValid(batchId) || std::strcmp(batchId, pagerBatchId) != 0) {
+        LOG_ERR("PAGER", "END batch ID mismatch");
+        return;
+      }
+      finishPagerBatch();
+      return;
+    }
+  }
+}
+
+void SleepActivity::finishPagerBatch() {
+  pagerBatchOpen = false;
+  pagerBatchId[0] = '\0';
+  pagerStandaloneRenderAt = 0;
+  requestPagerRingRender();
+}
+
+void SleepActivity::requestPagerRingRender() {
+  if (!pagerRingChanged) {
+    return;
+  }
+  checkPagerBatteryLevel(true);
+  if (pagerLowBatteryDetected) {
+    return;
+  }
+  pagerRingChanged = false;
+  pagerContentType = PagerContentType::NotificationStack;
+  pagerRefreshMode = nextPagerRefreshMode();
+  requestUpdate();
+}
+
+void SleepActivity::updatePagerMessage(char* payload, const size_t length) {
+  char* cursor = payload;
+  char* const end = payload + length;
+  char* const firstLine = takePagerLine(cursor, end);
+  char* const message = takePagerLine(cursor, end);
+  char* const footer = takePagerLine(cursor, end);
+  if (firstLine == nullptr) {
+    return;
+  }
+  pagerContentType = PagerContentType::Message;
+  if (!copyPagerField(pagerTitle, sizeof(pagerTitle), firstLine)) {
+    pagerTitle[0] = '\0';
+  }
+  if (!copyPagerField(pagerMessage, sizeof(pagerMessage), message)) {
+    pagerMessage[0] = '\0';
+  }
+  if (!copyPagerField(pagerFooter, sizeof(pagerFooter), footer)) {
+    pagerFooter[0] = '\0';
+  }
+}
+
+void SleepActivity::copyPagerEllipsizedText(const char* source, char* destination, const size_t destinationSize,
+                                            const int fontId, const int maxWidth,
+                                            const EpdFontFamily::Style style) const {
+  if (destination == nullptr || destinationSize == 0) {
+    return;
+  }
+  destination[0] = '\0';
+  if (source == nullptr || *source == '\0' || maxWidth <= 0) {
     return;
   }
 
-  pagerContentType = PagerContentType::Message;
-  char* const message = takeLine();
-  char* const footer = takeLine();
-  sanitizeField(firstLine);
-  sanitizeField(message);
-  sanitizeField(footer);
-  pagerTitle = firstLine == nullptr ? "" : firstLine;
-  pagerMessage = message == nullptr ? "" : message;
-  pagerFooter = footer == nullptr ? "" : footer;
+  size_t length = std::min(std::strlen(source), destinationSize - 1);
+  while (length > 0 && (static_cast<unsigned char>(source[length]) & 0xC0) == 0x80) {
+    length--;
+  }
+  std::memcpy(destination, source, length);
+  destination[length] = '\0';
+  if (length == std::strlen(source) && renderer.getTextWidth(fontId, destination, style) <= maxWidth) {
+    return;
+  }
+
+  static constexpr char ELLIPSIS[] = "...";
+  if (renderer.getTextWidth(fontId, ELLIPSIS, style) > maxWidth) {
+    destination[0] = '\0';
+    return;
+  }
+
+  while (length > 0) {
+    length--;
+    while (length > 0 && (static_cast<unsigned char>(destination[length]) & 0xC0) == 0x80) {
+      length--;
+    }
+    destination[length] = '\0';
+    if (length + sizeof(ELLIPSIS) > destinationSize) {
+      continue;
+    }
+    std::memcpy(destination + length, ELLIPSIS, sizeof(ELLIPSIS));
+    if (renderer.getTextWidth(fontId, destination, style) <= maxWidth) {
+      return;
+    }
+    destination[length] = '\0';
+  }
+  std::memcpy(destination, ELLIPSIS, sizeof(ELLIPSIS));
 }
 
 int SleepActivity::drawPagerWrappedText(const char* text, const int fontId, const int x, int y, const int maxWidth,
@@ -556,7 +750,7 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
         }
         const int availableHeight = timelineBottom - timelineTop;
         const int naturalRowHeight = renderer.getLineHeight(UI_10_FONT_ID) +
-                                     renderer.getLineHeight(SMALL_FONT_ID) * 2 + metrics.verticalSpacing;
+                                     renderer.getLineHeight(SMALL_FONT_ID) + metrics.verticalSpacing;
         const int rowHeight = std::max(1, std::min(naturalRowHeight, availableHeight / pagerNotificationCount));
         for (uint8_t index = 0; index < pagerNotificationCount; index++) {
           const int rowTop = timelineTop + rowHeight * index;
@@ -566,12 +760,18 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
           const int timeWidth = renderer.getTextWidth(SMALL_FONT_ID, notification.time);
           const int titleWidth = std::max(1, contentWidth - timeWidth - metrics.verticalSpacing);
           const int titleY = rowTop + rowPadding;
+          char fittedTitle[sizeof(notification.title)] = {};
+          char fittedMessage[sizeof(notification.message)] = {};
+          copyPagerEllipsizedText(notification.title, fittedTitle, sizeof(fittedTitle), UI_10_FONT_ID, titleWidth,
+                                  EpdFontFamily::BOLD);
+          copyPagerEllipsizedText(notification.message, fittedMessage, sizeof(fittedMessage), SMALL_FONT_ID,
+                                  contentWidth);
           renderer.drawText(SMALL_FONT_ID, contentRight - timeWidth, titleY, notification.time);
-          const int messageY = drawPagerWrappedText(notification.title, UI_10_FONT_ID, contentX, titleY, titleWidth, 1,
-                                                    EpdFontFamily::BOLD) + 2;
-          const int messageLines = std::max(0, (rowBottom - rowPadding - messageY) /
-                                                   renderer.getLineHeight(SMALL_FONT_ID));
-          drawPagerWrappedText(notification.message, SMALL_FONT_ID, contentX, messageY, contentWidth, messageLines);
+          renderer.drawText(UI_10_FONT_ID, contentX, titleY, fittedTitle, true, EpdFontFamily::BOLD);
+          const int messageY = titleY + renderer.getLineHeight(UI_10_FONT_ID) + 2;
+          if (messageY + renderer.getLineHeight(SMALL_FONT_ID) <= rowBottom - rowPadding) {
+            renderer.drawText(SMALL_FONT_ID, contentX, messageY, fittedMessage);
+          }
         }
         break;
       }
