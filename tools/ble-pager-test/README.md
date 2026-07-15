@@ -7,7 +7,7 @@ It writes UTF-8 text to the device's custom GATT service:
 - writable characteristic: `ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001`
 - read-only policy/status characteristic: `ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001`
 - payload: `XPAGER1\nDATA\n<16-hex-token>\n<title>\nmessage\nfooter`;
-  maximum 320 UTF-8 bytes total, leaving 290 bytes for display text
+  maximum 216 UTF-8 bytes total, leaving 186 bytes for display text
 
 ## Run it
 
@@ -51,10 +51,9 @@ debugging. A first valid setup write is acknowledged before X3 disconnects and
 switches to configured periodic availability. After that, connect only while
 the X3's short advertising window is visible.
 
-After each write, the page reads firmware status to distinguish `accepted`,
-`unchanged`, and rejected authenticated payloads. The duplicate baseline resets
-whenever X3 enters a new Pager session, so resending the previous session's
-message is accepted once and repeated messages within that session are skipped.
+The GATT write callback is the terminal browser-side result; the page does not
+add a post-write status read. Event batches and duplicate event IDs are
+exercised by the Android companion.
 
 ## Current power behavior
 

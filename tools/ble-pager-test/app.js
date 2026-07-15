@@ -1,7 +1,7 @@
 const SERVICE_UUID = "ca7b0001-6f6f-4d9f-9d78-3d9c4a9ed001";
 const PAYLOAD_UUID = "ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001";
 const STATUS_UUID = "ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001";
-const MAX_PAYLOAD_BYTES = 320;
+const MAX_PAYLOAD_BYTES = 216;
 const CLIENT_TOKEN_BYTES = 16;
 const PAYLOAD_PREFIX = "XPAGER1\nDATA\n";
 const TOKEN_STORAGE_KEY = "crosspoint-pager-client-token";
@@ -200,14 +200,7 @@ async function sendPayload(event) {
     } else {
       await payloadCharacteristic.writeValue(bytes);
     }
-    const value = await statusCharacteristic.readValue();
-    const status = parseStatus(decoder.decode(value));
-    if (!["accepted", "unchanged", "enrolled"].includes(status.last_write)) {
-      throw new Error(`Xteink rejected the Pager write (${status.last_write || "unknown"}).`);
-    }
-    sendStatus.textContent = status.last_write === "unchanged"
-      ? "Pager update acknowledged.\nMESSAGE IDENTICAL, X3 WILL NOT UPDATE CONTENT!"
-      : "Pager update acknowledged.";
+    sendStatus.textContent = "Pager update acknowledged.";
   } catch (error) {
     sendStatus.textContent = `Send failed: ${error.message}`;
   }
