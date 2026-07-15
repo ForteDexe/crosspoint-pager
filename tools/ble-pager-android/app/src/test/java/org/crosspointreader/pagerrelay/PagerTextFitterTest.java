@@ -45,4 +45,21 @@ public final class PagerTextFitterTest {
         assertEquals("mmm...", wide);
         assertEquals("jjjjjjjjjj", narrow);
     }
+
+    @Test
+    public void bodyCalibrationUsesSixMoreNarrowGlyphs() {
+        PagerTextFitter.WidthMeasurer fourPixelGlyphs = text -> text.length() * 4f;
+
+        String fitted = PagerTextFitter.fitBodyLine(repeat('j', 120), 151, fourPixelGlyphs);
+
+        assertEquals(repeat('j', 108) + "...", fitted);
+    }
+
+    private static String repeat(char value, int count) {
+        StringBuilder result = new StringBuilder(count);
+        for (int index = 0; index < count; index++) {
+            result.append(value);
+        }
+        return result.toString();
+    }
 }

@@ -331,9 +331,10 @@ it. There is no scrolling or wrapped continuation line.
 3. Android also trims to the protocol byte limits. The body receives the bytes
    left after the actual time and fitted title are encoded, up to 151 bytes.
    Pixel and complete-command byte constraints must both pass.
-4. Android font measurement is intentionally conservative. Firmware performs
-   the final measurement with the actual e-ink fonts and applies the same
-   trailing `...` rule as a bounds-safety fallback.
+4. Android adds a bounded 24-pixel body allowance to compensate for its
+   sans-serif font overestimating narrow glyphs relative to the firmware's
+   Noto Sans 8 font. Firmware performs the authoritative final measurement
+   with the actual e-ink font and applies the same trailing `...` rule.
 5. Xteink renders the complete changed ring once at `END`, once at missing-END
    timeout, or once after the standalone-ADD debounce. It does not repaint for
    duplicate event IDs or an empty batch.

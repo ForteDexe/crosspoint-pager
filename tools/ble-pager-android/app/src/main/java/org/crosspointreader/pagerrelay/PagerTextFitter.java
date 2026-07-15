@@ -11,6 +11,7 @@ final class PagerTextFitter {
 
     private static final float CONTENT_WIDTH_PX = 420f;
     private static final float TITLE_TIME_GAP_PX = 20f;
+    private static final float BODY_WIDTH_CALIBRATION_PX = 24f;
     private static final String ELLIPSIS = "...";
 
     private PagerTextFitter() {}
@@ -30,9 +31,15 @@ final class PagerTextFitter {
         String safeTitle = fitSingleLine(
                 title, PagerProtocol.MAX_TITLE_BYTES, titleWidth, titlePaint::measureText, true);
         int messageBytes = PagerProtocol.maxAddMessageBytes(safeTime, safeTitle);
-        String safeMessage = fitSingleLine(
-                message, messageBytes, CONTENT_WIDTH_PX, smallPaint::measureText, true);
+        String safeMessage = fitBodyLine(message, messageBytes, smallPaint::measureText);
         return new PagerProtocol.NotificationItem(eventId, safeTime, safeTitle, safeMessage);
+    }
+
+    static String fitBodyLine(String value, int maxBytes, WidthMeasurer measurer) {
+        // Android's sans-serif font overestimates narrow glyphs compared with
+        // the firmware's Noto Sans 8 font. Six 4 px glyphs calibrate that
+        // difference; firmware remains the exact bounds-safety fitter.
+        return fitSingleLine(value, maxBytes, CONTENT_WIDTH_PX + BODY_WIDTH_CALIBRATION_PX, measurer, true);
     }
 
     static String fitSingleLine(String value, int maxBytes, float maxWidth,
