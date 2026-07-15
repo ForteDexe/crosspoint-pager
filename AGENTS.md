@@ -50,6 +50,9 @@ control-flow, and review skills when their descriptions match the task.
 
 ## BLE pager direction
 
+- Before changing the Pager protocol, enrollment, mailbox scheduling, or app
+  retry behavior, audit both sides against `docs/ble-pager-contract.md` and
+  update that contract and its change-impact map first.
 - The existing BLE implementation is a HID client for page-turner remotes. A
   phone-to-pager design needs a separate, minimal GATT peripheral service;
   do not repurpose HID input as a notification protocol.

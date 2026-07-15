@@ -44,6 +44,8 @@ Use the [PC Web Bluetooth test page](../tools/ble-pager-test/README.md)
 to exercise the protocol from Edge or Chrome.
 For the user-facing local-server and browser connection steps, see [Connect
 Pager from a PC browser](pager-web-bluetooth.md).
+For the firmware-to-Android state map, protocol rules, acceptance gates, and
+change-impact checklist, see the [BLE Pager contract](ble-pager-contract.md).
 
 ## Connection and power model
 
