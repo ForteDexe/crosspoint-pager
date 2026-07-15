@@ -8,6 +8,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.IBinder;
 
+import java.util.List;
+
 public final class PagerRelayService extends Service {
     static final String ACTION_START_RELAY = "org.crosspointreader.pagerrelay.START_RELAY";
     static final String ACTION_STOP_RELAY = "org.crosspointreader.pagerrelay.STOP_RELAY";
@@ -22,7 +24,6 @@ public final class PagerRelayService extends Service {
     static final String ACTION_FORGET_PAGER = "org.crosspointreader.pagerrelay.FORGET_PAGER";
     static final String ACTION_SELECT_PAGER = "org.crosspointreader.pagerrelay.SELECT_PAGER";
     static final String ACTION_STATUS = "org.crosspointreader.pagerrelay.STATUS";
-    static final String EXTRA_PAYLOAD = "payload";
     static final String EXTRA_STATUS = "status";
     static final String EXTRA_COUNTDOWN_AT_MS = "countdown_at_ms";
     static final String EXTRA_EVENT_CATEGORY = "event_category";
@@ -47,18 +48,20 @@ public final class PagerRelayService extends Service {
         context.startForegroundService(new Intent(context, PagerRelayService.class).setAction(ACTION_STOP_RELAY));
     }
 
-    static void sendTest(Context context, String payload) {
-        send(context, payload, UiStatusChannel.TEST);
+    static void sendTest(Context context, List<PagerProtocol.NotificationItem> notifications) {
+        for (PagerProtocol.NotificationItem notification : notifications) {
+            RelayPreferences.enqueuePendingEvent(context, notification);
+        }
+        send(context, UiStatusChannel.TEST);
     }
 
-    static void sendRelay(Context context, String payload) {
-        send(context, payload, UiStatusChannel.RELAY);
+    static void sendRelay(Context context) {
+        send(context, UiStatusChannel.RELAY);
     }
 
-    private static void send(Context context, String payload, UiStatusChannel channel) {
+    private static void send(Context context, UiStatusChannel channel) {
         Intent intent = new Intent(context, PagerRelayService.class)
                 .setAction(ACTION_SEND)
-                .putExtra(EXTRA_PAYLOAD, payload)
                 .putExtra(EXTRA_SEND_CHANNEL, channel.wireValue());
         context.startForegroundService(intent);
     }
@@ -139,12 +142,12 @@ public final class PagerRelayService extends Service {
         }
         configureConnectionMode();
         if (ACTION_SEND.equals(action)) {
-            String payload = intent.getStringExtra(EXTRA_PAYLOAD);
             UiStatusChannel channel = UiStatusChannel.fromWireValue(intent.getStringExtra(EXTRA_SEND_CHANNEL));
-            if (payload != null && PagerProtocol.isValidTestPayload(payload)) {
-                client.send(payload, channel == UiStatusChannel.RELAY ? UiStatusChannel.RELAY : UiStatusChannel.TEST);
+            if (!RelayPreferences.pendingEvents(this).isEmpty()) {
+                client.sendPending(channel == UiStatusChannel.RELAY ? UiStatusChannel.RELAY : UiStatusChannel.TEST);
             } else {
-                publishStatus("Pager payload is invalid.", 0L, EventLogCategory.NOTIFICATION_RELAY, channel);
+                publishStatus("No new Pager notifications are queued.", 0L,
+                        EventLogCategory.NOTIFICATION_RELAY, channel);
             }
         } else if (ACTION_READ_STATUS.equals(action)) {
             client.readStatus();
@@ -177,10 +180,14 @@ public final class PagerRelayService extends Service {
         } else if (ACTION_RESUME_ENABLED_MODES.equals(action)) {
             if (shouldHoldRelayConnection()) {
                 client.holdConnection();
+            } else if (RelayPreferences.isEnabled(this) && !RelayPreferences.pendingEvents(this).isEmpty()) {
+                client.sendPending(UiStatusChannel.RELAY);
             }
         } else {
             if (shouldHoldRelayConnection()) {
                 client.holdConnection();
+            } else if (RelayPreferences.isEnabled(this) && !RelayPreferences.pendingEvents(this).isEmpty()) {
+                client.sendPending(UiStatusChannel.RELAY);
             } else {
                 publishStatus(RelayPreferences.isEnabled(this) ? "Pager relay is ready." : "Pager test sender is ready.",
                         0L, EventLogCategory.NOTIFICATION_RELAY,

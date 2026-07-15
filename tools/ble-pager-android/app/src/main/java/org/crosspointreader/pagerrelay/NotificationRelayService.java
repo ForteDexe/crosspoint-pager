@@ -20,6 +20,9 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public final class NotificationRelayService extends NotificationListenerService {
     private static final String ACTION_REFRESH_STACK =
@@ -65,9 +68,8 @@ public final class NotificationRelayService extends NotificationListenerService 
 
     @Override
     public void onNotificationRemoved(StatusBarNotification notification) {
-        if (RelayPreferences.isEnabled(this) && !getPackageName().equals(notification.getPackageName())) {
-            scheduleStackRefresh();
-        }
+        // Pager is an append-only recent-event feed. Removing a phone
+        // notification does not rewrite Xteink history.
     }
 
     @Override
@@ -99,22 +101,25 @@ public final class NotificationRelayService extends NotificationListenerService 
         if (activeNotifications == null) {
             activeNotifications = new StatusBarNotification[0];
         }
-        Arrays.sort(activeNotifications,
-                Comparator.comparingLong(StatusBarNotification::getPostTime).reversed());
+        Arrays.sort(activeNotifications, Comparator.comparingLong(StatusBarNotification::getPostTime));
 
         int maximum = RelayPreferences.maxNotifications(this);
-        List<PagerProtocol.NotificationItem> items = new ArrayList<>(maximum);
+        List<PagerProtocol.NotificationItem> items = new ArrayList<>();
         for (StatusBarNotification notification : activeNotifications) {
             PagerProtocol.NotificationItem item = notificationItem(notification);
             if (item == null) {
                 continue;
             }
             items.add(item);
-            if (items.size() == maximum) {
-                break;
-            }
         }
-        PagerRelayService.sendRelay(this, PagerProtocol.notificationStackPayload(items));
+        int first = Math.max(0, items.size() - maximum);
+        boolean queuedAny = false;
+        for (int index = first; index < items.size(); index++) {
+            queuedAny |= RelayPreferences.enqueuePendingEvent(this, items.get(index));
+        }
+        if (queuedAny || !RelayPreferences.pendingEvents(this).isEmpty()) {
+            PagerRelayService.sendRelay(this);
+        }
     }
 
     private PagerProtocol.NotificationItem notificationItem(StatusBarNotification notification) {
@@ -138,7 +143,22 @@ public final class NotificationRelayService extends NotificationListenerService 
         String displayTitle = TextUtils.isEmpty(title) ? appName : title.toString();
         String displayMessage = TextUtils.isEmpty(message) ? appName : message.toString();
         String time = DateFormat.getTimeFormat(this).format(new Date(notification.getPostTime()));
-        return new PagerProtocol.NotificationItem(time, displayTitle, displayMessage);
+        return PagerTextFitter.fit(eventId(notification), time, displayTitle, displayMessage);
+    }
+
+    private String eventId(StatusBarNotification notification) {
+        String identity = notification.getKey() + "|" + notification.getPostTime();
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(identity.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(16);
+            for (int index = 0; index < 8; index++) {
+                result.append(String.format(java.util.Locale.US, "%02x", digest[index]));
+            }
+            return result.toString();
+        } catch (NoSuchAlgorithmException impossible) {
+            return String.format(java.util.Locale.US, "%016x", identity.hashCode() & 0xffffffffL);
+        }
     }
 
     private String applicationLabel(String packageName) {

@@ -3,6 +3,13 @@ package org.crosspointreader.pagerrelay;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
+
 final class RelayPreferences {
     private static final String NAME = "pager_relay";
     private static final String ENABLED = "enabled";
@@ -28,6 +35,10 @@ final class RelayPreferences {
     private static final String PAGER_TECHNICAL_STATUS = "pager_technical_status";
     private static final String AUTO_UPDATE_PAGER_POLICY = "auto_update_pager_policy";
     private static final String MAX_NOTIFICATIONS = "max_notifications";
+    private static final String PENDING_EVENTS = "pending_events";
+    private static final String SENT_EVENT_IDS = "sent_event_ids";
+    private static final int MAX_SENT_EVENT_IDS = 64;
+    private static final long PENDING_EVENT_MAX_AGE_MS = 75L * 60L * 1000L;
     static final int DEFAULT_MAX_NOTIFICATIONS = 4;
 
     private RelayPreferences() {}
@@ -226,6 +237,123 @@ final class RelayPreferences {
         int boundedValue = Math.max(1, Math.min(PagerProtocol.MAX_NOTIFICATION_COUNT, value));
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
                 .putInt(MAX_NOTIFICATIONS, boundedValue).apply();
+        List<PagerProtocol.NotificationItem> pending = pendingEvents(context);
+        while (pending.size() > boundedValue) {
+            pending.remove(0);
+        }
+        storePendingEvents(context, pending);
+    }
+
+    static boolean enqueuePendingEvent(Context context, PagerProtocol.NotificationItem item) {
+        if (item == null || !PagerProtocol.isValidEventId(item.eventId) || hasSentEvent(context, item.eventId)) {
+            return false;
+        }
+        List<PagerProtocol.NotificationItem> pending = pendingEvents(context);
+        for (PagerProtocol.NotificationItem existing : pending) {
+            if (existing.eventId.equals(item.eventId)) {
+                return false;
+            }
+        }
+        pending.add(item);
+        while (pending.size() > maxNotifications(context)) {
+            pending.remove(0);
+        }
+        storePendingEvents(context, pending);
+        return true;
+    }
+
+    static List<PagerProtocol.NotificationItem> pendingEvents(Context context) {
+        List<PagerProtocol.NotificationItem> result = new ArrayList<>();
+        String raw = context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(PENDING_EVENTS, "[]");
+        try {
+            JSONArray array = new JSONArray(raw);
+            for (int index = 0; index < array.length(); index++) {
+                JSONObject value = array.getJSONObject(index);
+                String eventId = value.optString("id");
+                if (!PagerProtocol.isValidEventId(eventId)) {
+                    continue;
+                }
+                long queuedAtMs = value.optLong("queued_at_ms", System.currentTimeMillis());
+                if (System.currentTimeMillis() - queuedAtMs > PENDING_EVENT_MAX_AGE_MS) {
+                    continue;
+                }
+                result.add(new PagerProtocol.NotificationItem(eventId, value.optString("time"),
+                        value.optString("title"), value.optString("message"), queuedAtMs));
+            }
+        } catch (JSONException ignored) {
+            context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().remove(PENDING_EVENTS).apply();
+        }
+        return result;
+    }
+
+    static void markEventSent(Context context, String eventId) {
+        if (!PagerProtocol.isValidEventId(eventId)) {
+            return;
+        }
+        List<PagerProtocol.NotificationItem> pending = pendingEvents(context);
+        pending.removeIf(item -> eventId.equals(item.eventId));
+        storePendingEvents(context, pending);
+
+        List<String> sent = sentEventIds(context);
+        sent.remove(eventId);
+        sent.add(eventId);
+        while (sent.size() > MAX_SENT_EVENT_IDS) {
+            sent.remove(0);
+        }
+        storeSentEventIds(context, sent);
+    }
+
+    static void clearPendingEvents(Context context) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().remove(PENDING_EVENTS).apply();
+    }
+
+    private static boolean hasSentEvent(Context context, String eventId) {
+        return sentEventIds(context).contains(eventId);
+    }
+
+    private static List<String> sentEventIds(Context context) {
+        List<String> result = new ArrayList<>();
+        String raw = context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(SENT_EVENT_IDS, "[]");
+        try {
+            JSONArray array = new JSONArray(raw);
+            for (int index = 0; index < array.length(); index++) {
+                String eventId = array.optString(index);
+                if (PagerProtocol.isValidEventId(eventId)) {
+                    result.add(eventId);
+                }
+            }
+        } catch (JSONException ignored) {
+            context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().remove(SENT_EVENT_IDS).apply();
+        }
+        return result;
+    }
+
+    private static void storePendingEvents(Context context, List<PagerProtocol.NotificationItem> pending) {
+        JSONArray array = new JSONArray();
+        for (PagerProtocol.NotificationItem item : pending) {
+            JSONObject value = new JSONObject();
+            try {
+                value.put("id", item.eventId);
+                value.put("time", item.time);
+                value.put("title", item.title);
+                value.put("message", item.message);
+                value.put("queued_at_ms", item.queuedAtMs);
+                array.put(value);
+            } catch (JSONException ignored) {
+                // String values cannot fail JSON encoding; skip a malformed item defensively.
+            }
+        }
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .putString(PENDING_EVENTS, array.toString()).apply();
+    }
+
+    private static void storeSentEventIds(Context context, List<String> sent) {
+        JSONArray array = new JSONArray();
+        for (String eventId : sent) {
+            array.put(eventId);
+        }
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .putString(SENT_EVENT_IDS, array.toString()).apply();
     }
 
     static boolean isPagerReadyForUse(Context context) {
@@ -259,6 +387,8 @@ final class RelayPreferences {
                 .remove(PAGER_POLICY_INTERVAL_MS)
                 .remove(PAGER_LAST_SYNC_WALL_CLOCK_MS)
                 .remove(PAGER_TECHNICAL_STATUS)
+                .remove(PENDING_EVENTS)
+                .remove(SENT_EVENT_IDS)
                 .remove(MAILBOX_INTERVAL_MS)
                 .remove(MAILBOX_WINDOW_MS)
                 .remove(MAILBOX_NEXT_WINDOW_WALL_CLOCK_MS);

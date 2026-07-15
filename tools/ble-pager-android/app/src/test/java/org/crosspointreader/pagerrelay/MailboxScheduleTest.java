@@ -5,30 +5,38 @@ import static org.junit.Assert.assertEquals;
 import org.junit.Test;
 
 public final class MailboxScheduleTest {
-    private static final long INTERVAL_MS = 300_000L;
+    private static final long FIVE_MINUTES_MS = 300_000L;
     private static final long WINDOW_MS = 2_000L;
-    private static final long FIRST_WINDOW_MS = 1_000_000L;
 
     @Test
-    public void firstWindowUsesIntervalWithoutAddingWindowDuration() {
-        assertEquals(1_300_000L, MailboxSchedule.afterObservedWindow(FIRST_WINDOW_MS, INTERVAL_MS));
+    public void fiveMinuteIntervalUsesNextRoundedUtcBoundary() {
+        long at170320 = ((17L * 60L + 3L) * 60L + 20L) * 1000L;
+        long at170500 = ((17L * 60L + 5L) * 60L) * 1000L;
+        assertEquals(at170500,
+                MailboxSchedule.currentOrNextUtcWindow(at170320, FIVE_MINUTES_MS, WINDOW_MS));
     }
 
     @Test
-    public void activeWindowKeepsItsScheduledStart() {
-        assertEquals(FIRST_WINDOW_MS, MailboxSchedule.advancePastExpiredWindows(
-                FIRST_WINDOW_MS, INTERVAL_MS, WINDOW_MS, FIRST_WINDOW_MS + WINDOW_MS - 1L));
+    public void currentWindowRemainsUsableUntilItsEnd() {
+        long at170500 = ((17L * 60L + 5L) * 60L) * 1000L;
+        assertEquals(at170500,
+                MailboxSchedule.currentOrNextUtcWindow(at170500 + WINDOW_MS - 1L,
+                        FIVE_MINUTES_MS, WINDOW_MS));
     }
 
     @Test
-    public void expiredWindowAdvancesByOneStartToStartInterval() {
-        assertEquals(1_300_000L, MailboxSchedule.advancePastExpiredWindows(
-                FIRST_WINDOW_MS, INTERVAL_MS, WINDOW_MS, FIRST_WINDOW_MS + WINDOW_MS));
+    public void connectionAtWindowEndUsesNextGlobalBoundary() {
+        long at170500 = ((17L * 60L + 5L) * 60L) * 1000L;
+        long at171000 = ((17L * 60L + 10L) * 60L) * 1000L;
+        assertEquals(at171000,
+                MailboxSchedule.currentOrNextUtcWindow(at170500 + WINDOW_MS,
+                        FIVE_MINUTES_MS, WINDOW_MS));
     }
 
     @Test
-    public void multipleMissedWindowsAdvanceByWholeIntervals() {
-        assertEquals(1_900_000L, MailboxSchedule.advancePastExpiredWindows(
-                FIRST_WINDOW_MS, INTERVAL_MS, WINDOW_MS, 1_602_000L));
+    public void scanLeadNeverProducesNegativeDelay() {
+        long at170501 = ((17L * 60L + 5L) * 60L + 1L) * 1000L;
+        assertEquals(0L, MailboxSchedule.scanDelay(
+                at170501, FIVE_MINUTES_MS, WINDOW_MS, 10_000L));
     }
 }

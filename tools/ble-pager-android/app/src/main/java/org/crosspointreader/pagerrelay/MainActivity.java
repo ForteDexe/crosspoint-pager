@@ -262,7 +262,7 @@ public final class MainActivity extends Activity {
         TextView connectionHeading = text("Connection mode", 20, true);
         connectionHeading.setPadding(0, dp(16), 0, 0);
         content.addView(connectionHeading);
-        content.addView(text("Connect per message queues the latest update for known mailbox windows. Use Keep connected only with Xteink Always Available mode when measuring advertising idle versus connected idle.", 15, false));
+        content.addView(text("Connect per message queues pending notification events for known mailbox windows. Use Keep connected only with Xteink Always Available mode when measuring advertising idle versus connected idle.", 15, false));
         content.addView(connectionModePicker());
 
         notificationRelaySwitch = switchControl(getString(R.string.notification_relay),
@@ -776,8 +776,8 @@ public final class MainActivity extends Activity {
             requestBluetoothPermissions();
             return;
         }
-        String payload = currentPayload();
-        if (!isCurrentPayloadValid(payload)) {
+        List<PagerProtocol.NotificationItem> notifications = currentTestNotifications();
+        if (!isCurrentPayloadValid(notifications)) {
             return;
         }
         if (!RelayPreferences.isPagerReadyForUse(this)) {
@@ -785,7 +785,7 @@ public final class MainActivity extends Activity {
             return;
         }
         updateOperationButtons(true, policyRetryActive);
-        PagerRelayService.sendTest(this, payload);
+        PagerRelayService.sendTest(this, notifications);
     }
 
     private void readPagerStatus() {
@@ -805,11 +805,16 @@ public final class MainActivity extends Activity {
     }
 
     private void updatePayloadState() {
-        String payload = currentPayload();
-        int bytes = PagerProtocol.utf8Length(payload);
-        byteCount.setText(getString(R.string.payload_byte_count, bytes, PagerProtocol.MAX_DISPLAY_PAYLOAD_BYTES));
+        List<PagerProtocol.NotificationItem> notifications = currentTestNotifications();
+        int bytes = 0;
+        for (PagerProtocol.WriteCommand command : PagerProtocol.notificationBatch(
+                notifications, RelayPreferences.maxNotifications(this), System.currentTimeMillis() / 1000L)) {
+            bytes = Math.max(bytes, PagerProtocol.utf8Length(
+                    PagerProtocol.authenticatedCommand(command, "0000000000000000")));
+        }
+        byteCount.setText(getString(R.string.payload_byte_count, bytes, PagerProtocol.MAX_PAYLOAD_BYTES));
         send.setEnabled(sendRetryActive
-                || isCurrentPayloadValid(payload) && RelayPreferences.isPagerReadyForUse(this));
+                || isCurrentPayloadValid(notifications) && RelayPreferences.isPagerReadyForUse(this));
     }
 
     private void updateOperationButtons(boolean sendActive, boolean policyActive) {
@@ -826,21 +831,32 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private String currentPayload() {
-        if (notificationStackTestMode) {
-            return PagerProtocol.notificationStackPayload(currentTestNotifications());
+    private boolean isCurrentPayloadValid(List<PagerProtocol.NotificationItem> notifications) {
+        if (notifications.isEmpty()) {
+            return false;
         }
-        return PagerProtocol.testPayload(title == null ? "" : title.getText().toString(),
-                message == null ? "" : message.getText().toString(),
-                footer == null ? "" : footer.getText().toString());
-    }
-
-    private boolean isCurrentPayloadValid(String payload) {
-        return (!notificationStackTestMode || !currentTestNotifications().isEmpty())
-                && PagerProtocol.isValidTestPayload(payload);
+        for (PagerProtocol.WriteCommand command : PagerProtocol.notificationBatch(
+                notifications, RelayPreferences.maxNotifications(this), System.currentTimeMillis() / 1000L)) {
+            if (!PagerProtocol.isValidAuthenticatedCommand(command, "0000000000000000")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private List<PagerProtocol.NotificationItem> currentTestNotifications() {
+        if (!notificationStackTestMode) {
+            String titleValue = title == null ? "" : title.getText().toString();
+            String messageValue = message == null ? "" : message.getText().toString();
+            if (titleValue.trim().isEmpty() && messageValue.trim().isEmpty()) {
+                return new ArrayList<>();
+            }
+            String timeValue = footer == null || footer.getText().toString().trim().isEmpty()
+                    ? DateFormat.getTimeFormat(this).format(new Date()) : footer.getText().toString();
+            List<PagerProtocol.NotificationItem> single = new ArrayList<>(1);
+            single.add(PagerTextFitter.fit(PagerProtocol.nextId(), timeValue, titleValue, messageValue));
+            return single;
+        }
         List<PagerProtocol.NotificationItem> notifications = new ArrayList<>(testNotifications.size());
         for (TestNotificationFields fields : testNotifications) {
             String titleValue = fields.title.getText().toString().trim();
@@ -848,7 +864,7 @@ public final class MainActivity extends Activity {
             if (titleValue.isEmpty() && messageValue.isEmpty()) {
                 continue;
             }
-            notifications.add(new PagerProtocol.NotificationItem(
+            notifications.add(PagerTextFitter.fit(PagerProtocol.nextId(),
                     fields.time.getText().toString(), titleValue, messageValue));
         }
         return notifications;

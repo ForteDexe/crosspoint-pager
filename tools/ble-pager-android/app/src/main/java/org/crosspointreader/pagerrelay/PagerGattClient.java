@@ -21,9 +21,10 @@ import android.os.SystemClock;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
-/** One bounded, latest-message-wins GATT delivery pipeline. */
+/** One serialized GATT pipeline for policy reads and bounded event batches. */
 final class PagerGattClient {
     interface StatusCallback {
         void onStatus(String status, long countdownAtMs, EventLogCategory category,
@@ -33,7 +34,6 @@ final class PagerGattClient {
     private static final long SCAN_TIMEOUT_MS = 12_000;
     private static final long MAILBOX_SCAN_LEAD_MS = 10_000;
     private static final long MAILBOX_MAX_PENDING_MS = 75L * 60L * 1000L;
-    private static final long BEAT_SCAN_INTERVAL_MS = 30_000;
     private static final long BEAT_BUSY_RETRY_MS = 3_000;
     private static final long POLICY_SCAN_RETRY_MS = 1_000;
     private static final long UNKNOWN_SCHEDULE_RETRY_MS = 30_000;
@@ -52,9 +52,10 @@ final class PagerGattClient {
     private Operation currentOperation;
     private UiStatusChannel currentStatusChannel = UiStatusChannel.NONE;
     private String currentPayload;
+    private List<PagerProtocol.WriteCommand> currentBatch;
+    private int currentCommandIndex;
     private String queuedPayload;
     private UiStatusChannel queuedStatusChannel = UiStatusChannel.NONE;
-    private String pendingWriteResult;
     private String pendingPolicyRawStatus;
     private String activeDeviceAddress;
     private boolean mailboxScheduleKnown;
@@ -62,7 +63,6 @@ final class PagerGattClient {
     private boolean mailboxAttemptActive;
     private long mailboxIntervalMs;
     private long mailboxWindowMs;
-    private long lastMailboxWindowSeenAtMs;
     private long nextMailboxWindowAtMs;
     private long mailboxPayloadQueuedAtMs;
     private String mailboxPayload;
@@ -121,7 +121,11 @@ final class PagerGattClient {
         begin(Operation.HOLD_LINK, null, UiStatusChannel.RELAY);
     }
 
-    void send(String payload, UiStatusChannel channel) {
+    void sendPending(UiStatusChannel channel) {
+        send("pending", channel);
+    }
+
+    private void send(String payload, UiStatusChannel channel) {
         UiStatusChannel sendChannel = channel == UiStatusChannel.RELAY
                 ? UiStatusChannel.RELAY : UiStatusChannel.TEST;
         if (!RelayPreferences.isPagerReadyForUse(context)) {
@@ -139,7 +143,7 @@ final class PagerGattClient {
         if (isBusy()) {
             queuedPayload = payload;
             queuedStatusChannel = sendChannel;
-            status("Queued the latest pager update.", sendChannel);
+            status("Queued pending Pager notifications.", sendChannel);
             return;
         }
         begin(Operation.SEND, payload, sendChannel);
@@ -167,7 +171,7 @@ final class PagerGattClient {
 
     void cancelSend() {
         boolean cancelActiveOperation = currentStatusChannel == UiStatusChannel.TEST
-                && (currentOperation == Operation.SEND || currentOperation == Operation.VERIFY_SEND);
+                && currentOperation == Operation.SEND;
         if (mailboxStatusChannel == UiStatusChannel.TEST) {
             cancelMailboxAttempt();
             mailboxPayload = null;
@@ -188,7 +192,7 @@ final class PagerGattClient {
         }
         status("Pager update retry stopped.", UiStatusChannel.TEST);
         if (mailboxPayload != null && !keepConnected) {
-            scheduleMailboxAttempt(nextMailboxRetryDelayMs(), "Queued latest pager update for retry.");
+            scheduleMailboxAttempt(nextMailboxRetryDelayMs(), "Queued pending Pager notifications for retry.");
             return;
         }
         runQueuedPayload();
@@ -261,8 +265,7 @@ final class PagerGattClient {
         if (!beatEnabled) {
             return;
         }
-        long delayMs = mailboxScheduleKnown ? mailboxScanDelayMs() : BEAT_SCAN_INTERVAL_MS;
-        scheduleBeat(delayMs, "Beat mode armed.");
+        scheduleBeat(0L, "Beat mode scanning continuously.");
     }
 
     private void queueForMailbox(String payload, UiStatusChannel channel) {
@@ -270,25 +273,24 @@ final class PagerGattClient {
         mailboxStatusChannel = channel;
         mailboxPayloadQueuedAtMs = SystemClock.elapsedRealtime();
         if (isBusy()) {
-            status("Queued latest pager update.", channel);
+            status("Queued pending Pager notifications.", channel);
             return;
         }
         long delayMs = mailboxScheduleKnown ? mailboxScanDelayMs() : 0L;
         scheduleMailboxAttempt(delayMs, mailboxScheduleKnown
-                ? "Queued latest pager update for the mailbox window."
-                : "Queued latest pager update; mailbox timing is not known yet.");
+                ? "Queued pending Pager notifications for the mailbox window."
+                : "Queued pending Pager notifications; mailbox timing is not known yet.");
     }
 
     private long mailboxScanDelayMs() {
-        long now = SystemClock.elapsedRealtime();
-        long advancedWindowAtMs = MailboxSchedule.advancePastExpiredWindows(
-                nextMailboxWindowAtMs, mailboxIntervalMs, mailboxWindowMs, now);
-        if (advancedWindowAtMs != nextMailboxWindowAtMs) {
-            nextMailboxWindowAtMs = advancedWindowAtMs;
-            persistMailboxSchedule();
-        }
-        long scanStartAt = nextMailboxWindowAtMs - MAILBOX_SCAN_LEAD_MS;
-        return Math.max(0L, scanStartAt - now);
+        long nowWallClockMs = System.currentTimeMillis();
+        long nextWindowWallClockMs = MailboxSchedule.currentOrNextUtcWindow(
+                nowWallClockMs, mailboxIntervalMs, mailboxWindowMs);
+        long delayMs = MailboxSchedule.scanDelay(
+                nowWallClockMs, mailboxIntervalMs, mailboxWindowMs, MAILBOX_SCAN_LEAD_MS);
+        nextMailboxWindowAtMs = SystemClock.elapsedRealtime() + Math.max(0L, nextWindowWallClockMs - nowWallClockMs);
+        persistMailboxSchedule();
+        return delayMs;
     }
 
     private void scheduleMailboxAttempt(long delayMs, String message) {
@@ -313,7 +315,7 @@ final class PagerGattClient {
             return;
         }
         if (isBusy()) {
-            scheduleMailboxAttempt(1000L, "Pager is busy; keeping latest update for mailbox delivery.");
+            scheduleMailboxAttempt(1000L, "Pager is busy; keeping pending notifications for mailbox delivery.");
             return;
         }
         mailboxAttemptActive = true;
@@ -394,7 +396,7 @@ final class PagerGattClient {
             status(reason + " Mailbox delivery expired.", expiredChannel);
             return true;
         }
-        scheduleMailboxAttempt(nextMailboxRetryDelayMs(), reason + " Keeping latest update queued.");
+        scheduleMailboxAttempt(nextMailboxRetryDelayMs(), reason + " Keeping pending notifications queued.");
         return true;
     }
 
@@ -438,20 +440,16 @@ final class PagerGattClient {
         mailboxWindowMs = status.windowMs;
         if (!status.canScheduleMailbox()) {
             mailboxScheduleKnown = false;
-            lastMailboxWindowSeenAtMs = 0L;
             nextMailboxWindowAtMs = 0L;
             RelayPreferences.clearMailboxSchedule(context);
             cancelMailboxAttempt();
             return;
         }
         mailboxScheduleKnown = true;
-        long now = SystemClock.elapsedRealtime();
-        if (status.nextWindowMs > 0L) {
-            nextMailboxWindowAtMs = now + status.nextWindowMs;
-        } else {
-            lastMailboxWindowSeenAtMs = now;
-            nextMailboxWindowAtMs = now;
-        }
+        long nowWallClockMs = System.currentTimeMillis();
+        long nextWindowWallClockMs = MailboxSchedule.currentOrNextUtcWindow(
+                nowWallClockMs, mailboxIntervalMs, mailboxWindowMs);
+        nextMailboxWindowAtMs = SystemClock.elapsedRealtime() + nextWindowWallClockMs - nowWallClockMs;
         persistMailboxSchedule();
     }
 
@@ -459,9 +457,10 @@ final class PagerGattClient {
         if (!mailboxScheduleKnown || mailboxIntervalMs <= 0L) {
             return;
         }
-        lastMailboxWindowSeenAtMs = SystemClock.elapsedRealtime();
-        nextMailboxWindowAtMs = MailboxSchedule.afterObservedWindow(
-                lastMailboxWindowSeenAtMs, mailboxIntervalMs);
+        long nowWallClockMs = System.currentTimeMillis();
+        long nextWindowWallClockMs = MailboxSchedule.currentOrNextUtcWindow(
+                nowWallClockMs, mailboxIntervalMs, mailboxWindowMs);
+        nextMailboxWindowAtMs = SystemClock.elapsedRealtime() + nextWindowWallClockMs - nowWallClockMs;
         persistMailboxSchedule();
     }
 
@@ -477,8 +476,8 @@ final class PagerGattClient {
         mailboxIntervalMs = savedIntervalMs;
         mailboxWindowMs = savedWindowMs;
         long nowWallClockMs = System.currentTimeMillis();
-        savedNextWindowWallClockMs = MailboxSchedule.advancePastExpiredWindows(
-                savedNextWindowWallClockMs, savedIntervalMs, savedWindowMs, nowWallClockMs);
+        savedNextWindowWallClockMs = MailboxSchedule.currentOrNextUtcWindow(
+                nowWallClockMs, savedIntervalMs, savedWindowMs);
         long delayMs = savedNextWindowWallClockMs - nowWallClockMs;
         nextMailboxWindowAtMs = SystemClock.elapsedRealtime()
                 + (delayMs >= 0L && delayMs <= savedIntervalMs ? delayMs : 0L);
@@ -511,7 +510,7 @@ final class PagerGattClient {
         currentOperation = operation;
         currentStatusChannel = channel;
         currentPayload = payload;
-        pendingWriteResult = null;
+        prepareCurrentBatch(operation);
         scanAndConnect();
     }
 
@@ -519,8 +518,19 @@ final class PagerGattClient {
         currentOperation = operation;
         currentStatusChannel = channel;
         currentPayload = payload;
-        pendingWriteResult = null;
+        prepareCurrentBatch(operation);
         runOperation();
+    }
+
+    private void prepareCurrentBatch(Operation operation) {
+        currentBatch = null;
+        currentCommandIndex = 0;
+        if (operation != Operation.SEND) {
+            return;
+        }
+        List<PagerProtocol.NotificationItem> pending = RelayPreferences.pendingEvents(context);
+        currentBatch = PagerProtocol.notificationBatch(pending, RelayPreferences.maxNotifications(context),
+                System.currentTimeMillis() / 1000L);
     }
 
     @SuppressLint("MissingPermission")
@@ -615,9 +625,6 @@ final class PagerGattClient {
                 return;
             }
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                if (completeSendWithoutResult("connection closed with GATT " + status)) {
-                    return;
-                }
                 fail("Pager connection failed (" + status + ").");
                 return;
             }
@@ -628,9 +635,6 @@ final class PagerGattClient {
                     fail("Could not discover Pager service.");
                 }
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                if (completeSendWithoutResult("link closed before result read")) {
-                    return;
-                }
                 boolean wasActive = currentOperation != null;
                 closeConnection();
                 finishAfterDisconnect(wasActive ? "Pager disconnected before delivery." : "Pager disconnected.");
@@ -670,9 +674,18 @@ final class PagerGattClient {
                 return;
             }
             if (currentOperation == Operation.SEND) {
-                pendingWriteResult = "Pager update sent.";
-                currentOperation = Operation.VERIFY_SEND;
-                readPagerStatus();
+                PagerProtocol.WriteCommand written = currentBatch == null || currentCommandIndex >= currentBatch.size()
+                        ? null : currentBatch.get(currentCommandIndex);
+                if (written != null && PagerProtocol.isValidEventId(written.eventId)) {
+                    RelayPreferences.markEventSent(context, written.eventId);
+                }
+                currentCommandIndex++;
+                if (currentBatch != null && currentCommandIndex < currentBatch.size()) {
+                    writePayload();
+                    return;
+                }
+                recordAcknowledgedWrite(false);
+                complete("Pager update sent.");
                 return;
             }
             complete("Pager update sent.");
@@ -712,7 +725,6 @@ final class PagerGattClient {
                 writePayload();
                 return;
             case CONFIRM_POLICY:
-            case VERIFY_SEND:
                 return;
         }
     }
@@ -727,16 +739,11 @@ final class PagerGattClient {
         String readStatus;
         if (currentOperation == Operation.BEAT_STATUS) {
             readStatus = "Beat: checking Xteink...";
-        } else if (currentOperation == Operation.VERIFY_SEND) {
-            readStatus = "Confirming the Xteink write...";
         } else {
             readStatus = "Reading Pager policy...";
         }
         status(readStatus);
         if (gatt == null || !gatt.readCharacteristic(characteristic)) {
-            if (completeSendWithoutResult("result read could not start")) {
-                return;
-            }
             fail("Pager policy read could not start.");
         }
     }
@@ -745,17 +752,23 @@ final class PagerGattClient {
     @SuppressWarnings("deprecation") // Required for Android 12 and earlier GATT writes.
     private void writePayload() {
         BluetoothGattCharacteristic characteristic = pagerService == null ? null : pagerService.getCharacteristic(PAYLOAD_UUID);
-        if (characteristic == null || currentPayload == null) {
+        PagerProtocol.WriteCommand command = currentOperation == Operation.CONFIRM_POLICY
+                ? PagerProtocol.policyConfirmationCommand()
+                : currentBatch == null || currentCommandIndex >= currentBatch.size()
+                        ? null : currentBatch.get(currentCommandIndex);
+        if (characteristic == null || command == null) {
             fail("Pager write characteristic was not found.");
             return;
         }
         String token = RelayPreferences.clientToken(context);
-        if (!PagerProtocol.isValidAuthenticatedPayload(currentPayload, token)) {
+        if (!PagerProtocol.isValidAuthenticatedCommand(command, token)) {
             fail("Pager setup token is missing or the payload is too large. Refresh Pager policy first.");
             return;
         }
-        byte[] bytes = PagerProtocol.authenticatedPayload(currentPayload, token).getBytes(StandardCharsets.UTF_8);
-        status("Sending pager update...");
+        byte[] bytes = PagerProtocol.authenticatedCommand(command, token).getBytes(StandardCharsets.UTF_8);
+        status(currentOperation == Operation.CONFIRM_POLICY
+                ? "Confirming Pager connection..."
+                : "Sending Pager batch " + (currentCommandIndex + 1) + "/" + currentBatch.size() + "...");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             int result = gatt == null
                     ? BluetoothStatusCodes.ERROR_UNKNOWN
@@ -786,10 +799,6 @@ final class PagerGattClient {
                 } else if (!retryPolicyAfterMiss("Xteink returned an incomplete Pager policy.")) {
                     fail("Xteink returned an incomplete Pager policy.");
                 }
-                return;
-            }
-            if (currentOperation == Operation.VERIFY_SEND) {
-                handleVerifiedWrite(rawStatus, pagerStatus);
                 return;
             }
             if (currentOperation == Operation.BEAT_STATUS) {
@@ -823,9 +832,6 @@ final class PagerGattClient {
                 retryBeatAfterMiss("Beat: policy read failed (" + status + ").");
                 return;
             }
-            if (completeSendWithoutResult("GATT " + status)) {
-                return;
-            }
             fail("Pager policy read failed (" + status + ").");
         }
     }
@@ -835,32 +841,6 @@ final class PagerGattClient {
         return PagerProtocol.isValidDeviceId(storedDeviceId)
                 && PagerProtocol.isValidDeviceId(status.deviceId)
                 && !storedDeviceId.equalsIgnoreCase(status.deviceId);
-    }
-
-    private void handleVerifiedWrite(String rawStatus, PagerProtocol.PagerStatus status) {
-        if (!PagerProtocol.wasLastWriteAccepted(rawStatus)) {
-            pendingWriteResult = null;
-            fail("Xteink rejected the authenticated Pager write. Reset Enrolled Device, then sync again.");
-            return;
-        }
-
-        String writeResult = pendingWriteResult;
-        pendingWriteResult = null;
-        recordAcknowledgedWrite(false);
-        storeObservedPolicyIfAllowed(status, rawStatus, false, false);
-        complete(PagerProtocol.wasLastWriteUnchanged(rawStatus)
-                ? "Pager update sent.\nMessage identical; Xteink will not update content."
-                : writeResult == null ? "Pager update sent." : writeResult);
-    }
-
-    private boolean completeSendWithoutResult(String reason) {
-        if (currentOperation != Operation.VERIFY_SEND) {
-            return false;
-        }
-        pendingWriteResult = null;
-        recordAcknowledgedWrite(false);
-        complete("Pager update sent.\nXteink acknowledged the write; result details unavailable (" + reason + ").");
-        return true;
     }
 
     private void completePolicyConfirmation() {
@@ -890,32 +870,23 @@ final class PagerGattClient {
     }
 
     private void recordAcknowledgedWrite(boolean policyWrite) {
-        boolean startedMailboxHandoff = !mailboxScheduleKnown && mailboxConfigured
-                && mailboxIntervalMs > 0L && mailboxWindowMs > 0L;
-        if (startedMailboxHandoff) {
+        if (mailboxConfigured && mailboxIntervalMs > 0L && mailboxWindowMs > 0L) {
             mailboxScheduleKnown = true;
-            lastMailboxWindowSeenAtMs = SystemClock.elapsedRealtime();
-            nextMailboxWindowAtMs = MailboxSchedule.afterObservedWindow(
-                    lastMailboxWindowSeenAtMs, mailboxIntervalMs);
-            persistMailboxSchedule();
+            updateNextMailboxWindowFromNow();
         }
         if (policyWrite) {
-            if (mailboxConfigured && !startedMailboxHandoff) {
-                updateNextMailboxWindowFromNow();
-            }
             return;
         }
         if (!mailboxAttemptActive) {
             return;
         }
-        if (currentPayload != null && currentPayload.equals(mailboxPayload)) {
+        mailboxAttemptActive = false;
+        if (RelayPreferences.pendingEvents(context).isEmpty()) {
             mailboxPayload = null;
             mailboxStatusChannel = UiStatusChannel.NONE;
             mailboxPayloadQueuedAtMs = 0L;
-        }
-        mailboxAttemptActive = false;
-        if (!startedMailboxHandoff) {
-            updateNextMailboxWindowFromNow();
+        } else {
+            mailboxPayload = "pending";
         }
     }
 
@@ -939,6 +910,8 @@ final class PagerGattClient {
         currentOperation = null;
         currentStatusChannel = UiStatusChannel.NONE;
         currentPayload = null;
+        currentBatch = null;
+        currentCommandIndex = 0;
         clearPendingWriteState();
         if (!keepConnected) {
             closeConnection();
@@ -950,7 +923,7 @@ final class PagerGattClient {
             return;
         }
         if (mailboxPayload != null && !keepConnected) {
-            scheduleMailboxAttempt(nextMailboxRetryDelayMs(), "Queued latest pager update for retry.");
+            scheduleMailboxAttempt(nextMailboxRetryDelayMs(), "Queued pending Pager notifications for retry.");
             return;
         }
         runQueuedPayload();
@@ -958,17 +931,15 @@ final class PagerGattClient {
 
     private void fail(String finalStatus) {
         UiStatusChannel failedChannel = currentStatusChannel;
+        boolean failedMailbox = mailboxAttemptActive && mailboxPayload != null;
         closeConnection();
-        if (mailboxAttemptActive) {
-            mailboxPayload = null;
-            mailboxStatusChannel = UiStatusChannel.NONE;
-            mailboxPayloadQueuedAtMs = 0L;
-        }
         boolean failedBeat = currentOperation == Operation.BEAT_STATUS || beatAttemptActive;
         boolean failedPolicyRead = isPolicyOperation() || policyAttemptActive;
         currentOperation = null;
         currentStatusChannel = UiStatusChannel.NONE;
         currentPayload = null;
+        currentBatch = null;
+        currentCommandIndex = 0;
         clearPendingWriteState();
         mailboxAttemptActive = false;
         beatAttemptActive = false;
@@ -989,6 +960,10 @@ final class PagerGattClient {
                 failedBeat ? UiStatusChannel.BEAT : failedChannel);
         if (failedBeat) {
             scheduleNextBeat();
+            return;
+        }
+        if (failedMailbox && !RelayPreferences.pendingEvents(context).isEmpty()) {
+            scheduleMailboxAttempt(nextMailboxRetryDelayMs(), finalStatus + " Keeping pending events queued.");
             return;
         }
         runQueuedPayload();
@@ -1025,7 +1000,7 @@ final class PagerGattClient {
             currentStatusChannel = UiStatusChannel.NONE;
             currentPayload = null;
             mailboxAttemptActive = false;
-            scheduleMailboxAttempt(nextMailboxRetryDelayMs(), finalStatus + " Keeping latest update queued.");
+            scheduleMailboxAttempt(nextMailboxRetryDelayMs(), finalStatus + " Keeping pending notifications queued.");
             return;
         }
         currentOperation = null;
@@ -1062,8 +1037,9 @@ final class PagerGattClient {
     }
 
     private void clearPendingWriteState() {
-        pendingWriteResult = null;
         pendingPolicyRawStatus = null;
+        currentBatch = null;
+        currentCommandIndex = 0;
     }
 
     void close() {
@@ -1139,12 +1115,11 @@ final class PagerGattClient {
         return mailboxPayload != null && mailboxStatusChannel == UiStatusChannel.TEST
                 || queuedPayload != null && queuedStatusChannel == UiStatusChannel.TEST
                 || currentStatusChannel == UiStatusChannel.TEST
-                        && (currentOperation == Operation.SEND || currentOperation == Operation.VERIFY_SEND);
+                        && currentOperation == Operation.SEND;
     }
 
     boolean hasSendRetryActive() {
-        return mailboxPayload != null || queuedPayload != null || currentOperation == Operation.SEND
-                || currentOperation == Operation.VERIFY_SEND;
+        return mailboxPayload != null || queuedPayload != null || currentOperation == Operation.SEND;
     }
 
     boolean hasPolicyRetryActive() {
@@ -1178,7 +1153,6 @@ final class PagerGattClient {
         mailboxConfigured = false;
         mailboxIntervalMs = 0L;
         mailboxWindowMs = 0L;
-        lastMailboxWindowSeenAtMs = 0L;
         nextMailboxWindowAtMs = 0L;
     }
 
@@ -1192,7 +1166,6 @@ final class PagerGattClient {
         SEND,
         READ_STATUS,
         CONFIRM_POLICY,
-        VERIFY_SEND,
         BEAT_STATUS
     }
 }
