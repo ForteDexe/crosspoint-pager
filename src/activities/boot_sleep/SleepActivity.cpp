@@ -11,6 +11,8 @@
 #include <Xtc.h>
 #include <esp_system.h>
 
+#include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #include "CrossPointSettings.h"
@@ -341,42 +343,198 @@ HalDisplay::RefreshMode SleepActivity::nextPagerRefreshMode() {
   return HalDisplay::FAST_REFRESH;
 }
 
-void SleepActivity::updatePagerText(const char* payload, size_t length) {
-  const char* cursor = payload;
-  size_t remaining = length;
+void SleepActivity::updatePagerText(char* payload, const size_t length) {
+  char* cursor = payload;
+  char* const end = payload + length;
+  pagerNotificationCount = 0;
 
-  const auto copyLine = [&cursor, &remaining](char* destination, size_t destinationSize) {
-    size_t written = 0;
-    while (remaining > 0 && *cursor != '\n') {
-      const char character = *cursor++;
-      remaining--;
-      if (character == '\r') {
-        continue;
-      }
-      if (written + 1 < destinationSize) {
-        destination[written++] = static_cast<unsigned char>(character) < 0x20 ? '?' : character;
-      }
+  const auto takeLine = [&cursor, end]() -> char* {
+    if (cursor >= end) {
+      return nullptr;
     }
-    if (remaining > 0 && *cursor == '\n') {
+    char* const line = cursor;
+    while (cursor < end && *cursor != '\n') {
       cursor++;
-      remaining--;
     }
-    destination[written] = '\0';
+    if (cursor < end) {
+      *cursor++ = '\0';
+    }
+    return line;
+  };
+  const auto sanitizeField = [](char* field) {
+    if (field == nullptr) {
+      return;
+    }
+    for (char* character = field; *character != '\0'; character++) {
+      if (static_cast<unsigned char>(*character) < 0x20) {
+        *character = ' ';
+      }
+    }
   };
 
-  copyLine(pagerTitle, sizeof(pagerTitle));
-  copyLine(pagerMessage, sizeof(pagerMessage));
-  copyLine(pagerFooter, sizeof(pagerFooter));
-  pagerHasData = true;
+  char* const firstLine = takeLine();
+  if (firstLine != nullptr && std::strcmp(firstLine, "XPSTACK1") == 0) {
+    pagerContentType = PagerContentType::NotificationStack;
+    while (pagerNotificationCount < PAGER_MAX_NOTIFICATIONS) {
+      char* const line = takeLine();
+      if (line == nullptr) {
+        break;
+      }
+      char* const firstSeparator = std::strchr(line, '\t');
+      if (firstSeparator == nullptr) {
+        continue;
+      }
+      *firstSeparator = '\0';
+      char* const secondSeparator = std::strchr(firstSeparator + 1, '\t');
+      if (secondSeparator == nullptr) {
+        continue;
+      }
+      *secondSeparator = '\0';
+
+      char* const time = line;
+      char* const title = firstSeparator + 1;
+      char* const message = secondSeparator + 1;
+      sanitizeField(time);
+      sanitizeField(title);
+      sanitizeField(message);
+      if (*title == '\0' && *message == '\0') {
+        continue;
+      }
+      pagerNotifications[pagerNotificationCount++] = PagerNotification{time, title, message};
+    }
+    return;
+  }
+
+  pagerContentType = PagerContentType::Message;
+  char* const message = takeLine();
+  char* const footer = takeLine();
+  sanitizeField(firstLine);
+  sanitizeField(message);
+  sanitizeField(footer);
+  pagerTitle = firstLine == nullptr ? "" : firstLine;
+  pagerMessage = message == nullptr ? "" : message;
+  pagerFooter = footer == nullptr ? "" : footer;
 }
 
-void SleepActivity::renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) const {
+int SleepActivity::drawPagerWrappedText(const char* text, const int fontId, const int x, int y, const int maxWidth,
+                                        const int maxLines, const EpdFontFamily::Style style) const {
+  if (text == nullptr || *text == '\0' || maxWidth <= 0 || maxLines <= 0) {
+    return y;
+  }
+
+  static constexpr size_t LINE_BYTES = 128;
+  const char* cursor = text;
+  const int lineHeight = renderer.getLineHeight(fontId);
+  for (int lineNumber = 0; lineNumber < maxLines && *cursor != '\0'; lineNumber++) {
+    while (*cursor == ' ') {
+      cursor++;
+    }
+    char line[LINE_BYTES] = {};
+    size_t used = 0;
+
+    while (*cursor != '\0') {
+      while (*cursor == ' ') {
+        cursor++;
+      }
+      if (*cursor == '\0') {
+        break;
+      }
+      const char* const wordStart = cursor;
+      const char* wordEnd = wordStart;
+      while (*wordEnd != '\0' && *wordEnd != ' ') {
+        wordEnd++;
+      }
+      const size_t wordBytes = static_cast<size_t>(wordEnd - wordStart);
+      const size_t separatorBytes = used == 0 ? 0 : 1;
+      if (used + separatorBytes + wordBytes < LINE_BYTES) {
+        const size_t previousUsed = used;
+        if (separatorBytes != 0) {
+          line[used++] = ' ';
+        }
+        std::memcpy(line + used, wordStart, wordBytes);
+        used += wordBytes;
+        line[used] = '\0';
+        if (renderer.getTextWidth(fontId, line, style) <= maxWidth) {
+          cursor = wordEnd;
+          while (*cursor == ' ') {
+            cursor++;
+          }
+          continue;
+        }
+        used = previousUsed;
+        line[used] = '\0';
+      }
+      if (used != 0) {
+        break;
+      }
+
+      while (cursor < wordEnd && used + 4 < LINE_BYTES) {
+        const unsigned char lead = static_cast<unsigned char>(*cursor);
+        const size_t characterBytes = lead < 0x80 ? 1 : (lead & 0xE0) == 0xC0 ? 2 : (lead & 0xF0) == 0xE0 ? 3 : 4;
+        if (cursor + characterBytes > wordEnd || used + characterBytes >= LINE_BYTES) {
+          break;
+        }
+        std::memcpy(line + used, cursor, characterBytes);
+        used += characterBytes;
+        line[used] = '\0';
+        if (renderer.getTextWidth(fontId, line, style) > maxWidth) {
+          used -= characterBytes;
+          line[used] = '\0';
+          break;
+        }
+        cursor += characterBytes;
+      }
+      if (used == 0 && cursor < wordEnd) {
+        cursor++;
+      }
+      break;
+    }
+
+    if (used == 0) {
+      break;
+    }
+    renderer.drawText(fontId, x, y, line, true, style);
+    y += lineHeight;
+  }
+  return y;
+}
+
+void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refreshMode) const {
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
   const auto& metrics = UITheme::getInstance().getMetrics();
+  int marginTop = 0;
+  int marginRight = 0;
+  int marginBottom = 0;
+  int marginLeft = 0;
+  renderer.getOrientedViewableTRBL(&marginTop, &marginRight, &marginBottom, &marginLeft);
+  const int sidePadding = metrics.contentSidePadding;
+  const int headingX = marginLeft + sidePadding;
+  const int headingY = marginTop + metrics.topPadding;
+  const int contentRight = pageWidth - marginRight - sidePadding;
+  const int headingHeight = renderer.getLineHeight(NOTOSANS_18_FONT_ID);
+  const int timelineTop = headingY + headingHeight + metrics.verticalSpacing;
+  const int timelineBottom = pageHeight - marginBottom - metrics.verticalSpacing;
+  const int timelineX = headingX;
+  const int contentX = timelineX + sidePadding;
+  const int contentWidth = contentRight - contentX;
 
   renderer.clearScreen();
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_PAGER));
+  renderer.drawText(NOTOSANS_18_FONT_ID, headingX, headingY, tr(STR_PAGER), true, EpdFontFamily::BOLD);
+  const int batteryX = contentRight - metrics.batteryWidth;
+  const int batteryY = headingY + (headingHeight - metrics.batteryHeight) / 2;
+  BaseTheme::drawBatteryOutline(renderer, batteryX, batteryY, metrics.batteryWidth, metrics.batteryHeight);
+  GUI.fillBatteryIcon(renderer, Rect{batteryX, batteryY, metrics.batteryWidth, metrics.batteryHeight},
+                      pagerBatteryPercent);
+  if (SETTINGS.hideBatteryPercentage != CrossPointSettings::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS) {
+    char batteryLabel[8] = {};
+    snprintf(batteryLabel, sizeof(batteryLabel), "%u%%", static_cast<unsigned int>(pagerBatteryPercent));
+    const int batteryLabelWidth = renderer.getTextWidth(SMALL_FONT_ID, batteryLabel);
+    renderer.drawText(SMALL_FONT_ID, batteryX - batteryLabelWidth - BaseTheme::batteryPercentSpacing,
+                      headingY + headingHeight / 2, batteryLabel);
+  }
+  renderer.fillRect(timelineX, timelineTop, 3, timelineBottom - timelineTop);
+
   if (SETTINGS.pagerClientEnrolled == 0) {
     char setupLabel[16] = {};
     HalBlePager::copySetupLabel(setupLabel, sizeof(setupLabel));
@@ -384,14 +542,50 @@ void SleepActivity::renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) 
                               EpdFontFamily::BOLD);
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 15, tr(STR_PAGER_SETUP_OPEN));
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 45, setupLabel);
-  } else if (pagerHasData) {
-    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 70, pagerTitle, true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, pagerMessage);
-    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 55, pagerFooter);
   } else {
-    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, tr(STR_BLUETOOTH_WAITING), true,
-                              EpdFontFamily::BOLD);
-    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
+    switch (pagerContentType) {
+      case PagerContentType::NotificationStack:
+        if (pagerNotificationCount == 0) {
+          renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, tr(STR_BLUETOOTH_WAITING), true,
+                                    EpdFontFamily::BOLD);
+          renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
+          break;
+        }
+        for (uint8_t index = 0; index < pagerNotificationCount; index++) {
+          const int rowTop = timelineTop + (timelineBottom - timelineTop) * index / pagerNotificationCount;
+          const int rowBottom = timelineTop + (timelineBottom - timelineTop) * (index + 1) / pagerNotificationCount;
+          const int rowPadding = std::min(metrics.verticalSpacing, std::max(2, (rowBottom - rowTop) / 8));
+          const auto& notification = pagerNotifications[index];
+          const int timeWidth = renderer.getTextWidth(SMALL_FONT_ID, notification.time);
+          const int titleWidth = std::max(1, contentWidth - timeWidth - metrics.verticalSpacing);
+          const int titleY = rowTop + rowPadding;
+          renderer.drawText(SMALL_FONT_ID, contentRight - timeWidth, titleY, notification.time);
+          const int messageY = drawPagerWrappedText(notification.title, UI_10_FONT_ID, contentX, titleY, titleWidth, 1,
+                                                    EpdFontFamily::BOLD) + 2;
+          const int messageLines = std::max(0, (rowBottom - rowPadding - messageY) /
+                                                   renderer.getLineHeight(SMALL_FONT_ID));
+          drawPagerWrappedText(notification.message, SMALL_FONT_ID, contentX, messageY, contentWidth, messageLines);
+        }
+        break;
+      case PagerContentType::Message: {
+        int textY = timelineTop + metrics.verticalSpacing;
+        textY = drawPagerWrappedText(pagerTitle, NOTOSANS_14_FONT_ID, contentX, textY, contentWidth, 2,
+                                     EpdFontFamily::BOLD) + metrics.verticalSpacing;
+        const int footerHeight = *pagerFooter == '\0' ? 0 : renderer.getLineHeight(SMALL_FONT_ID) * 2;
+        const int messageLines = std::max(0, (timelineBottom - textY - footerHeight - metrics.verticalSpacing) /
+                                                 renderer.getLineHeight(UI_10_FONT_ID));
+        drawPagerWrappedText(pagerMessage, UI_10_FONT_ID, contentX, textY, contentWidth, messageLines);
+        if (footerHeight != 0) {
+          drawPagerWrappedText(pagerFooter, SMALL_FONT_ID, contentX, timelineBottom - footerHeight, contentWidth, 2);
+        }
+        break;
+      }
+      case PagerContentType::None:
+        renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, tr(STR_BLUETOOTH_WAITING), true,
+                                  EpdFontFamily::BOLD);
+        renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
+        break;
+    }
   }
   // E-ink retains the image without power. Match the reader's deep-sleep
   // cleanup by shutting down the controller analog rails after every Pager

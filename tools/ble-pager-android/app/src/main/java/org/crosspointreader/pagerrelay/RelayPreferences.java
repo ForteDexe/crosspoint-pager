@@ -27,6 +27,8 @@ final class RelayPreferences {
     private static final String PAGER_LAST_SYNC_WALL_CLOCK_MS = "pager_last_sync_wall_clock_ms";
     private static final String PAGER_TECHNICAL_STATUS = "pager_technical_status";
     private static final String AUTO_UPDATE_PAGER_POLICY = "auto_update_pager_policy";
+    private static final String MAX_NOTIFICATIONS = "max_notifications";
+    static final int DEFAULT_MAX_NOTIFICATIONS = 4;
 
     private RelayPreferences() {}
 
@@ -207,6 +209,18 @@ final class RelayPreferences {
     static void setAutoUpdatePagerPolicy(Context context, boolean enabled) {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
                 .putBoolean(AUTO_UPDATE_PAGER_POLICY, enabled).apply();
+    }
+
+    static int maxNotifications(Context context) {
+        int value = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+                .getInt(MAX_NOTIFICATIONS, DEFAULT_MAX_NOTIFICATIONS);
+        return Math.max(1, Math.min(PagerProtocol.MAX_NOTIFICATION_COUNT, value));
+    }
+
+    static void setMaxNotifications(Context context, int value) {
+        int boundedValue = Math.max(1, Math.min(PagerProtocol.MAX_NOTIFICATION_COUNT, value));
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .putInt(MAX_NOTIFICATIONS, boundedValue).apply();
     }
 
     static boolean isPagerReadyForUse(Context context) {

@@ -9,9 +9,10 @@ experiment, not an upstream CrossPoint feature.
   advertise a small custom GATT peripheral named `CrossPoint Pager` and
   receive pager updates from it.
 - The writable characteristic accepts an app-level authenticated UTF-8 packet.
-  The display portion is still `title\nmessage\nfooter`; the full GATT write is
-  capped at 320 bytes, leaving 290 bytes for display text after the token
-  header.
+  Manual/browser messages use a `title\nmessage\nfooter` display body. The
+  Android relay can instead send one bounded `XPSTACK1` snapshot containing up
+  to ten timestamp/title/message rows. The full GATT write is capped at 320
+  bytes, leaving 290 bytes for either display body after the token header.
 - The display is refreshed only when the received payload differs from the
   previous one. Changed pager messages use a fast e-ink refresh; the cleanup
   refresh follows **Settings > Display > Refresh Frequency**, matching reader
@@ -23,9 +24,10 @@ experiment, not an upstream CrossPoint feature.
   it to exit Pager. When Pager was entered from a book, it reopens that book at
   its saved reading position and continues the reader's refresh cycle; otherwise
   it returns to Home.
-- Pager's existing themed header shows the battery when the screen opens and
-  whenever a changed message redraws it; it never refreshes e-ink solely for
-  the battery. Pager also skips the normal main-loop USB/fuel-gauge poll. The
+- Pager's dedicated timeline header shows the cached battery value when the
+  screen opens and whenever a changed message redraws it; it never refreshes
+  e-ink solely for the battery. Pager also skips the normal main-loop
+  USB/fuel-gauge poll. The
   low-battery safeguard is the only periodic gauge user: above 40% it samples
   every 15 minutes, and at 40% or below every 5 minutes. It enters deep sleep
   at 25% or below.
@@ -136,6 +138,14 @@ updates that stored status or performs enrollment. The optional **Auto update
 pager policy** switch permits successful sends and Beat reads from the already
 selected reader to refresh the stored snapshot; it does not select devices,
 enroll a new reader, or start independent polling.
+
+The Android notification relay owns the notification stack. It reads Android's
+active notifications, sorts them newest first, and sends a complete replacement
+snapshot after a notification is posted or dismissed. Its persistent
+**Maximum notifications** setting is bounded to 1–10 (default four); older
+notifications beyond that count are discarded. Firmware stores only the latest
+290-byte snapshot and renders it without scrolling or allocating a second
+screen buffer.
 
 Periodic availability is still not true deep sleep: the X3 battery latch stays powered so the
 MCU can return from timer light sleep without rebooting. Current must still be

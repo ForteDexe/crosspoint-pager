@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdint>
+
 #include <HalBlePager.h>
 #include <HalDisplay.h>
 
@@ -22,6 +24,14 @@ class SleepActivity final : public Activity {
   bool handlesPowerButtonSleepGesture() const override { return pagerMode; }
 
  private:
+  enum class PagerContentType : uint8_t { None, Message, NotificationStack };
+
+  struct PagerNotification {
+    const char* time = "";
+    const char* title = "";
+    const char* message = "";
+  };
+
   void renderDefaultSleepScreen() const;
   void renderCustomSleepScreen() const;
   void renderCoverSleepScreen() const;
@@ -37,14 +47,16 @@ class SleepActivity final : public Activity {
   void transitionPagerMailboxIfReady();
   HalDisplay::RefreshMode nextPagerRefreshMode();
   void renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) const;
-  void updatePagerText(const char* payload, size_t length);
+  void updatePagerText(char* payload, size_t length);
+  int drawPagerWrappedText(const char* text, int fontId, int x, int y, int maxWidth, int maxLines,
+                           EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
 
   bool fromTimeout = false;
   bool pagerLowBatterySleep = false;
   bool pagerMode = false;
   bool pagerMailboxMode = false;
   bool pagerReturnToReader = false;
-  bool pagerHasData = false;
+  PagerContentType pagerContentType = PagerContentType::None;
   bool pagerLowBatteryDetected = false;
   unsigned long pagerPowerButtonPressedAt = 0;
   unsigned long lastPagerBatteryCheckMs = 0;
@@ -54,9 +66,7 @@ class SleepActivity final : public Activity {
   // panel resync and looks like a full refresh. Message cleanup still follows
   // Settings > Display > Refresh Frequency via nextPagerRefreshMode().
   HalDisplay::RefreshMode pagerRefreshMode = HalDisplay::FAST_REFRESH;
-  static constexpr size_t PAGER_TITLE_BYTES = 80;
-  static constexpr size_t PAGER_MESSAGE_BYTES = 180;
-  static constexpr size_t PAGER_FOOTER_BYTES = 56;
+  static constexpr uint8_t PAGER_MAX_NOTIFICATIONS = 10;
   static constexpr uint16_t PAGER_LOW_BATTERY_PERCENT = 25;
   // Above this threshold, a slow probe is enough to notice the transition;
   // at or below it, poll promptly so the 25% deep-sleep safeguard is timely.
@@ -66,7 +76,9 @@ class SleepActivity final : public Activity {
   // Reused for every transfer so the 321-byte GATT payload never sits in a
   // hot-path stack frame.
   char pagerPayload[HalBlePager::MAX_PAYLOAD_BYTES + 1] = {};
-  char pagerTitle[PAGER_TITLE_BYTES] = {};
-  char pagerMessage[PAGER_MESSAGE_BYTES] = {};
-  char pagerFooter[PAGER_FOOTER_BYTES] = {};
+  const char* pagerTitle = "";
+  const char* pagerMessage = "";
+  const char* pagerFooter = "";
+  PagerNotification pagerNotifications[PAGER_MAX_NOTIFICATIONS] = {};
+  uint8_t pagerNotificationCount = 0;
 };

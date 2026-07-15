@@ -5,10 +5,11 @@ does two local-only jobs:
 
 It supports Xteink models X3 and X4 running CrossPoint Pager firmware.
 
-- relays new Android notifications to `CrossPoint Pager` while the relay is
-  explicitly running; and
+- relays a newest-first snapshot of active Android notifications to
+  `CrossPoint Pager` while the relay is explicitly running; and
 - provides a test page with the same **Title**, **Message**, and **Footer**
-  fields, policy read, and identical-payload warning as
+  fields, plus a multi-notification stack editor, policy read, and
+  identical-payload warning as
   [`../ble-pager-test`](../ble-pager-test/README.md).
 
 The user first chooses one nearby Xteink from a foreground scan. The app then
@@ -29,13 +30,21 @@ The app matches the firmware and PC test-page protocol exactly:
 - writable characteristic: `ca7b0002-6f6f-4d9f-9d78-3d9c4a9ed001`
 - read-only policy/status characteristic:
   `ca7b0003-6f6f-4d9f-9d78-3d9c4a9ed001`
-- encoding: UTF-8 `XPAGER1\nDATA\n<16-hex-token>\n<title>\nmessage\nfooter`
+- envelope: UTF-8 `XPAGER1\nDATA\n<16-hex-token>\n<display-body>`
 - maximum payload: 320 bytes total; display text is limited to 290 bytes after
   the token header
 
 The test page refuses an oversized payload, like the browser test page.
-Notification delivery preserves the title and source-app footer, truncating the
-message at UTF-8 character boundaries when necessary.
+Its display body remains `title\nmessage\nfooter`. Notification relay uses a
+bounded `XPSTACK1` display body containing timestamp, title, and message rows.
+The app rebuilds that transient snapshot from Android's active notifications,
+orders it newest first, and divides the same 290-byte budget across the selected
+rows without splitting UTF-8 characters.
+
+**Maximum notifications** accepts 1–10 and is stored across app restarts. The
+default is four. Notifications older than the selected limit are omitted; when
+an included notification is posted or dismissed, the app sends a replacement
+snapshot rather than appending an unbounded history.
 
 The policy/status read is device-owned and read-only. It reports effective and
 configured availability, receive-window timing, enrollment state, and the
@@ -195,10 +204,14 @@ Install on a connected Android device with:
 5. To compare Xteink power modes, choose **Connect per message** or **Keep
    connected while relay is active** before starting the relay.
 6. To relay notifications, open Android's **Notification access** screen from
-   the app, allow *CrossPoint Pager*, then enable **Notification relay**. The
-   persistent Android notification means the relay is active.
+   the app, allow *CrossPoint Pager*, choose **Maximum notifications** from
+   1–10, then enable **Notification relay**. The persistent Android
+   notification means the relay is active.
 7. To test directly, enter Title, Message, and Footer and select **Send pager
-   update**. The mode summary above the fields confirms whether the test will
+   update**. Alternatively, select **Notification stack**, add up to the saved
+   **Maximum notifications**, and enter a time, title, and message for each
+   newest-first row. The test stack uses the same bounded payload as the live
+   notification relay. The mode summary above the fields confirms whether the test will
    disconnect after delivery or keep the link open. The byte counter must
    remain at or below 290. Select **Refresh pager policy** under **Pager status** to
    read the Xteink-owned availability, enrollment, model, identity, and link
@@ -223,8 +236,9 @@ Later test sends and forwarded notifications use the mailbox queue.
 
 If the phone loses its token or Xteink is reset, use **Settings → System → Pager
 → Enrolled Device → Reset** on Xteink, re-enter Pager standby, then select
-**Refresh pager policy** in the app. The app forwards all non-ongoing notifications while
-the relay is running. Pager enrollment is not Bluetooth bonding or strong
+**Refresh pager policy** in the app. The app forwards the newest active,
+non-ongoing notifications up to the selected maximum while the relay is
+running. Pager enrollment is not Bluetooth bonding or strong
 cryptographic authentication, so do not enable it where nearby unbonded BLE
 delivery is inappropriate.
 

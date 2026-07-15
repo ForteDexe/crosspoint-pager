@@ -19,8 +19,12 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.Editable;
+import android.text.InputFilter;
+import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.format.DateFormat;
+import android.view.inputmethod.EditorInfo;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -36,6 +40,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 public final class MainActivity extends Activity {
@@ -45,6 +50,12 @@ public final class MainActivity extends Activity {
     private EditText title;
     private EditText message;
     private EditText footer;
+    private EditText maxNotifications;
+    private LinearLayout singleMessageTestFields;
+    private LinearLayout notificationStackTestFields;
+    private TextView notificationStackTestStatus;
+    private Button addTestNotification;
+    private Button removeTestNotification;
     private TextView byteCount;
     private TextView status;
     private TextView policyStatus;
@@ -67,6 +78,9 @@ public final class MainActivity extends Activity {
     private Switch autoUpdatePolicySwitch;
     private BroadcastReceiver statusReceiver;
     private final List<LogEntry> statusLines = new ArrayList<>();
+    private final List<TestNotificationFields> testNotifications = new ArrayList<>();
+    private TextWatcher payloadWatcher;
+    private boolean notificationStackTestMode;
     private boolean updatingControlSwitches;
     private boolean sendRetryActive;
     private boolean policyRetryActive;
@@ -276,8 +290,31 @@ public final class MainActivity extends Activity {
                 return;
             }
             PagerRelayService.startRelay(this);
+            NotificationRelayService.requestStackRefresh(this);
         });
         content.addView(notificationRelaySwitch);
+
+        content.addView(text(getString(R.string.maximum_notifications), 16, true));
+        maxNotifications = field(getString(R.string.maximum_notifications_hint), false);
+        maxNotifications.setInputType(InputType.TYPE_CLASS_NUMBER);
+        maxNotifications.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        maxNotifications.setFilters(new InputFilter[] {new InputFilter.LengthFilter(2)});
+        maxNotifications.setText(Integer.toString(RelayPreferences.maxNotifications(this)));
+        maxNotifications.setOnFocusChangeListener((view, hasFocus) -> {
+            if (!hasFocus) {
+                saveMaximumNotifications();
+            }
+        });
+        maxNotifications.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId != EditorInfo.IME_ACTION_DONE) {
+                return false;
+            }
+            saveMaximumNotifications();
+            maxNotifications.clearFocus();
+            return true;
+        });
+        content.addView(maxNotifications);
+        content.addView(text(getString(R.string.maximum_notifications_summary), 14, false));
 
         LinearLayout debugContent = new LinearLayout(this);
         debugContent.setOrientation(LinearLayout.VERTICAL);
@@ -324,18 +361,53 @@ public final class MainActivity extends Activity {
         TextView testHeading = text("Test page", 20, true);
         testHeading.setPadding(0, dp(16), 0, 0);
         debugContent.addView(testHeading);
-        debugContent.addView(text("This uses the same title, message, footer payload and authenticated delivery check as tools/ble-pager-test. Refresh pager policy separately to complete enrollment or replace stored status.", 15, false));
+        debugContent.addView(text("Test either one legacy title/message/footer update or the same bounded notification stack used by the Android relay. Refresh pager policy separately to complete enrollment or replace stored status.", 15, false));
         testConnectionMode = text("", 15, true);
         testConnectionMode.setPadding(0, dp(8), 0, dp(4));
         debugContent.addView(testConnectionMode);
         updateTestConnectionMode();
 
+        RadioGroup testPayloadMode = new RadioGroup(this);
+        testPayloadMode.setOrientation(RadioGroup.VERTICAL);
+        RadioButton singleMessageMode = radioButton(getString(R.string.test_payload_single_message));
+        RadioButton notificationStackMode = radioButton(getString(R.string.test_payload_notification_stack));
+        testPayloadMode.addView(singleMessageMode);
+        testPayloadMode.addView(notificationStackMode);
+        singleMessageMode.setChecked(true);
+        debugContent.addView(testPayloadMode);
+
+        singleMessageTestFields = new LinearLayout(this);
+        singleMessageTestFields.setOrientation(LinearLayout.VERTICAL);
         title = field("Title", false);
         message = field("Message", true);
         footer = field("Footer", false);
-        debugContent.addView(title);
-        debugContent.addView(message);
-        debugContent.addView(footer);
+        singleMessageTestFields.addView(title);
+        singleMessageTestFields.addView(message);
+        singleMessageTestFields.addView(footer);
+        debugContent.addView(singleMessageTestFields);
+
+        LinearLayout notificationStackTestContainer = new LinearLayout(this);
+        notificationStackTestContainer.setOrientation(LinearLayout.VERTICAL);
+        notificationStackTestContainer.setVisibility(View.GONE);
+        notificationStackTestFields = new LinearLayout(this);
+        notificationStackTestFields.setOrientation(LinearLayout.VERTICAL);
+        notificationStackTestContainer.addView(notificationStackTestFields);
+        addTestNotification = button(getString(R.string.add_test_notification));
+        addTestNotification.setOnClickListener(view -> addTestNotification());
+        notificationStackTestContainer.addView(addTestNotification);
+        removeTestNotification = button(getString(R.string.remove_test_notification));
+        removeTestNotification.setOnClickListener(view -> removeTestNotification());
+        notificationStackTestContainer.addView(removeTestNotification);
+        notificationStackTestStatus = text("", 14, false);
+        notificationStackTestContainer.addView(notificationStackTestStatus);
+        debugContent.addView(notificationStackTestContainer);
+
+        testPayloadMode.setOnCheckedChangeListener((group, checkedId) -> {
+            notificationStackTestMode = checkedId == notificationStackMode.getId();
+            singleMessageTestFields.setVisibility(notificationStackTestMode ? View.GONE : View.VISIBLE);
+            notificationStackTestContainer.setVisibility(notificationStackTestMode ? View.VISIBLE : View.GONE);
+            updatePayloadState();
+        });
 
         byteCount = text("", 14, false);
         debugContent.addView(byteCount);
@@ -382,14 +454,18 @@ public final class MainActivity extends Activity {
         debugContent.addView(statusLog);
         renderEventLog();
 
-        TextWatcher watcher = new TextWatcher() {
+        payloadWatcher = new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { updatePayloadState(); }
             @Override public void afterTextChanged(Editable s) {}
         };
-        title.addTextChangedListener(watcher);
-        message.addTextChangedListener(watcher);
-        footer.addTextChangedListener(watcher);
+        title.addTextChangedListener(payloadWatcher);
+        message.addTextChangedListener(payloadWatcher);
+        footer.addTextChangedListener(payloadWatcher);
+        addTestNotification();
+        if (RelayPreferences.maxNotifications(this) > 1) {
+            addTestNotification();
+        }
         updateOperationButtons(RelayPreferences.isSendRetryActive(this),
                 RelayPreferences.isPolicyRetryActive(this));
         updatePayloadState();
@@ -706,7 +782,7 @@ public final class MainActivity extends Activity {
             return;
         }
         String payload = currentPayload();
-        if (!PagerProtocol.isValidTestPayload(payload)) {
+        if (!isCurrentPayloadValid(payload)) {
             return;
         }
         if (!RelayPreferences.isPagerReadyForUse(this)) {
@@ -738,7 +814,7 @@ public final class MainActivity extends Activity {
         int bytes = PagerProtocol.utf8Length(payload);
         byteCount.setText(getString(R.string.payload_byte_count, bytes, PagerProtocol.MAX_DISPLAY_PAYLOAD_BYTES));
         send.setEnabled(sendRetryActive
-                || PagerProtocol.isValidTestPayload(payload) && RelayPreferences.isPagerReadyForUse(this));
+                || isCurrentPayloadValid(payload) && RelayPreferences.isPagerReadyForUse(this));
     }
 
     private void updateOperationButtons(boolean sendActive, boolean policyActive) {
@@ -750,15 +826,102 @@ public final class MainActivity extends Activity {
         if (refreshPolicy != null) {
             refreshPolicy.setText(policyActive ? R.string.stop_policy_retry : R.string.refresh_pager_policy);
         }
-        if (send != null && title != null && message != null && footer != null) {
+        if (send != null) {
             updatePayloadState();
         }
     }
 
     private String currentPayload() {
+        if (notificationStackTestMode) {
+            return PagerProtocol.notificationStackPayload(currentTestNotifications());
+        }
         return PagerProtocol.testPayload(title == null ? "" : title.getText().toString(),
                 message == null ? "" : message.getText().toString(),
                 footer == null ? "" : footer.getText().toString());
+    }
+
+    private boolean isCurrentPayloadValid(String payload) {
+        return (!notificationStackTestMode || !currentTestNotifications().isEmpty())
+                && PagerProtocol.isValidTestPayload(payload);
+    }
+
+    private List<PagerProtocol.NotificationItem> currentTestNotifications() {
+        List<PagerProtocol.NotificationItem> notifications = new ArrayList<>(testNotifications.size());
+        for (TestNotificationFields fields : testNotifications) {
+            String titleValue = fields.title.getText().toString().trim();
+            String messageValue = fields.message.getText().toString().trim();
+            if (titleValue.isEmpty() && messageValue.isEmpty()) {
+                continue;
+            }
+            notifications.add(new PagerProtocol.NotificationItem(
+                    fields.time.getText().toString(), titleValue, messageValue));
+        }
+        return notifications;
+    }
+
+    private void addTestNotification() {
+        int maximum = RelayPreferences.maxNotifications(this);
+        if (testNotifications.size() >= maximum) {
+            updateTestNotificationControls();
+            return;
+        }
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        TextView heading = text("", 16, true);
+        EditText time = field(getString(R.string.test_notification_time), false);
+        time.setText(DateFormat.getTimeFormat(this).format(new Date()));
+        EditText notificationTitle = field(getString(R.string.test_notification_title), false);
+        EditText notificationMessage = field(getString(R.string.test_notification_message), true);
+        notificationMessage.setMinLines(2);
+        time.addTextChangedListener(payloadWatcher);
+        notificationTitle.addTextChangedListener(payloadWatcher);
+        notificationMessage.addTextChangedListener(payloadWatcher);
+        container.addView(heading);
+        container.addView(time);
+        container.addView(notificationTitle);
+        container.addView(notificationMessage);
+        notificationStackTestFields.addView(container);
+        testNotifications.add(new TestNotificationFields(container, heading, time, notificationTitle,
+                notificationMessage));
+        updateTestNotificationControls();
+        updatePayloadState();
+    }
+
+    private void removeTestNotification() {
+        if (testNotifications.size() <= 1) {
+            return;
+        }
+        TestNotificationFields removed = testNotifications.remove(testNotifications.size() - 1);
+        notificationStackTestFields.removeView(removed.container);
+        updateTestNotificationControls();
+        updatePayloadState();
+    }
+
+    private void trimTestNotificationsToLimit() {
+        int maximum = RelayPreferences.maxNotifications(this);
+        while (testNotifications.size() > maximum) {
+            TestNotificationFields removed = testNotifications.remove(testNotifications.size() - 1);
+            notificationStackTestFields.removeView(removed.container);
+        }
+        updateTestNotificationControls();
+        updatePayloadState();
+    }
+
+    private void updateTestNotificationControls() {
+        if (notificationStackTestStatus == null) {
+            return;
+        }
+        int maximum = RelayPreferences.maxNotifications(this);
+        for (int index = 0; index < testNotifications.size(); index++) {
+            testNotifications.get(index).heading.setText(
+                    getString(R.string.test_notification_number, index + 1,
+                            index == 0 ? getString(R.string.newest_notification) : "").trim());
+        }
+        notificationStackTestStatus.setText(
+                getString(R.string.test_notification_count, testNotifications.size(), maximum));
+        addTestNotification.setEnabled(testNotifications.size() < maximum);
+        removeTestNotification.setEnabled(testNotifications.size() > 1);
     }
 
     private void showDeviceChooser() {
@@ -914,6 +1077,27 @@ public final class MainActivity extends Activity {
         return field;
     }
 
+    private void saveMaximumNotifications() {
+        int previousValue = RelayPreferences.maxNotifications(this);
+        int value = previousValue;
+        try {
+            value = Integer.parseInt(maxNotifications.getText().toString().trim());
+        } catch (NumberFormatException ignored) {
+            // Restore the current saved value below.
+        }
+        value = Math.max(1, Math.min(PagerProtocol.MAX_NOTIFICATION_COUNT, value));
+        maxNotifications.setText(Integer.toString(value));
+        maxNotifications.setSelection(maxNotifications.length());
+        if (value == previousValue) {
+            return;
+        }
+        RelayPreferences.setMaxNotifications(this, value);
+        trimTestNotificationsToLimit();
+        if (RelayPreferences.isEnabled(this)) {
+            NotificationRelayService.requestStackRefresh(this);
+        }
+    }
+
     private Button button(String label) {
         Button button = new Button(this);
         button.setText(label);
@@ -947,6 +1131,23 @@ public final class MainActivity extends Activity {
         LogEntry(EventLogCategory category, String text) {
             this.category = category;
             this.text = text;
+        }
+    }
+
+    private static final class TestNotificationFields {
+        final LinearLayout container;
+        final TextView heading;
+        final EditText time;
+        final EditText title;
+        final EditText message;
+
+        TestNotificationFields(LinearLayout container, TextView heading, EditText time, EditText title,
+                               EditText message) {
+            this.container = container;
+            this.heading = heading;
+            this.time = time;
+            this.title = title;
+            this.message = message;
         }
     }
 

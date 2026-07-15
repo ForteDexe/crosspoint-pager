@@ -7,6 +7,9 @@
     <string name="notification_access_required">Allow notification access for CrossPoint Pager first.</string>
     <string name="payload_byte_count">%1$d / %2$d UTF-8 bytes</string>
     <string name="notification_relay">Notification relay</string>
+    <string name="maximum_notifications">Maximum notifications</string>
+    <string name="maximum_notifications_hint">1–10</string>
+    <string name="maximum_notifications_summary">Newest notifications are shown first. Older notifications beyond this limit are discarded from the Pager snapshot.</string>
     <string name="beat_mode">Beat mode</string>
     <string name="debug_collapsed">Debug ▸</string>
     <string name="debug_expanded">Debug ▾</string>
@@ -16,6 +19,16 @@
     <string name="pager_enrollment_reset_advice">Cannot confirm the current Pager policy. On Xteink, select Settings → System → Pager → Enrolled Device → Reset, re-enter Pager standby, then refresh again.</string>
     <string name="duration_milliseconds">%1$d ms</string>
     <string name="send_pager_update">Send pager update</string>
+    <string name="test_payload_single_message">Single message</string>
+    <string name="test_payload_notification_stack">Notification stack</string>
+    <string name="add_test_notification">Add notification</string>
+    <string name="remove_test_notification">Remove last notification</string>
+    <string name="test_notification_time">Time</string>
+    <string name="test_notification_title">Notification title</string>
+    <string name="test_notification_message">Notification message</string>
+    <string name="test_notification_number">Notification %1$d %2$s</string>
+    <string name="newest_notification">(newest)</string>
+    <string name="test_notification_count">%1$d of %2$d test notifications</string>
     <string name="stop_pager_update_retry">Stop pager update retry</string>
     <string name="refresh_pager_policy">Refresh pager policy</string>
     <string name="stop_policy_retry">Stop policy refresh</string>

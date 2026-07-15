@@ -1,6 +1,7 @@
 package org.crosspointreader.pagerrelay;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 final class PagerProtocol {
     static final String DEVICE_NAME = "CrossPoint Pager";
@@ -12,6 +13,8 @@ final class PagerProtocol {
     static final String PAYLOAD_PREFIX = "XPAGER1\nDATA\n";
     static final int AUTH_PAYLOAD_OVERHEAD_BYTES = PAYLOAD_PREFIX.length() + CLIENT_TOKEN_BYTES + 1;
     static final int MAX_DISPLAY_PAYLOAD_BYTES = MAX_PAYLOAD_BYTES - AUTH_PAYLOAD_OVERHEAD_BYTES;
+    static final int MAX_NOTIFICATION_COUNT = 10;
+    private static final String NOTIFICATION_STACK_PREFIX = "XPSTACK1\n";
 
     private PagerProtocol() {}
 
@@ -28,6 +31,31 @@ final class PagerProtocol {
         String safeFooter = truncateUtf8(clean(footer), 48);
         int messageBudget = Math.max(0, MAX_DISPLAY_PAYLOAD_BYTES - utf8Length(safeTitle) - utf8Length(safeFooter) - 2);
         return safeTitle + "\n" + truncateUtf8(clean(message), messageBudget) + "\n" + safeFooter;
+    }
+
+    static String notificationStackPayload(List<NotificationItem> notifications) {
+        int count = Math.min(notifications == null ? 0 : notifications.size(), MAX_NOTIFICATION_COUNT);
+        StringBuilder payload = new StringBuilder(NOTIFICATION_STACK_PREFIX);
+        for (int index = 0; index < count; index++) {
+            NotificationItem item = notifications.get(index);
+            int entriesRemaining = count - index;
+            int bytesRemaining = MAX_DISPLAY_PAYLOAD_BYTES - utf8Length(payload.toString());
+            int lineBudget = Math.max(0, bytesRemaining / entriesRemaining);
+            boolean hasFollowingEntry = index + 1 < count;
+            int delimiterBytes = 2 + (hasFollowingEntry ? 1 : 0);
+
+            String time = truncateUtf8(cleanField(item.time), Math.min(16, Math.max(0, lineBudget - delimiterBytes)));
+            int contentBudget = Math.max(0, lineBudget - utf8Length(time) - delimiterBytes);
+            int titleBudget = contentBudget * 3 / 5;
+            String title = truncateUtf8(cleanField(item.title), titleBudget);
+            String message = truncateUtf8(cleanField(item.message), contentBudget - utf8Length(title));
+
+            payload.append(time).append('\t').append(title).append('\t').append(message);
+            if (hasFollowingEntry) {
+                payload.append('\n');
+            }
+        }
+        return payload.toString();
     }
 
     static boolean isValidTestPayload(String payload) {
@@ -201,6 +229,10 @@ final class PagerProtocol {
         return value == null ? "" : value.replace('\r', ' ').replace('\n', ' ').trim();
     }
 
+    private static String cleanField(String value) {
+        return clean(value).replace('\t', ' ');
+    }
+
     private static String truncateUtf8(String value, int maxBytes) {
         StringBuilder result = new StringBuilder();
         int used = 0;
@@ -242,6 +274,18 @@ final class PagerProtocol {
         }
         String formatted = String.format(java.util.Locale.US, "%.2f", value);
         return formatted.replaceAll("0+$", "").replaceAll("\\.$", "");
+    }
+
+    static final class NotificationItem {
+        final String time;
+        final String title;
+        final String message;
+
+        NotificationItem(String time, String title, String message) {
+            this.time = time;
+            this.title = title;
+            this.message = message;
+        }
     }
 
     static final class PagerStatus {
