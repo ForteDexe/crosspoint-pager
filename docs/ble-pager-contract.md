@@ -57,6 +57,27 @@ Android implementation ownership:
 - `NotificationRelayService` owns the complete notification snapshot;
 - `PagerRelayService` owns foreground-service lifetime.
 
+## Change impact map
+
+Use this table before editing Pager behavior. A change is incomplete until each
+applicable owner in its row has been reviewed, even when only one side needs a
+code change.
+
+| Contract area | Firmware owners | Android owners | Required checks |
+| --- | --- | --- | --- |
+| Enrollment and identity | `HalBlePager` authentication/handoff; `SleepActivity` persistence and transition; Pager settings reset | `PagerProtocol` status/token parsing; `PagerGattClient` manual refresh/confirmation; `RelayPreferences` selected identity | Setup status, confirmation, disconnect, configured-mode handoff |
+| Mailbox cadence | `HalBlePager` window anchor/state; `SleepActivity` radio suspend/resume; `HalPowerManager` timer sleep | `PagerGattClient` estimate/retry; `RelayPreferences` persisted schedule | First, second, third, missed, and restored windows |
+| Delivery result | `HalBlePager` authenticated write response and fallback disconnect | `PagerProtocol` packet; `PagerGattClient` serialized write/terminal result | Changed, duplicate, rejected, and expired payloads |
+| Notification snapshot | `SleepActivity` parsing/rendering and refresh count | `NotificationRelayService` snapshot; app notification-limit setting | 1, maximum, empty, long UTF-8, and overflow cases |
+| Beat diagnostics | Status read must remain passive | `PagerGattClient` continuous scan/serialization; service/UI enable state | Consecutive windows and pause/resume around foreground BLE |
+| Pager entry, exit, and battery | `SleepActivity`, `HalPowerManager`, display refresh ownership | Status text only | Reader return, power-button-only exit, low-battery deep sleep |
+| Wire or status fields | `HalBlePager` UUIDs, limits, status writer | `PagerProtocol` constants/parser plus every consumer above | Backward parsing, unknown fields, payload-size boundary |
+
+For every change, record the contract section, affected row, code owners
+reviewed, deterministic checks, builds, and hardware gates in the commit or
+handoff. Do not infer impact from the file being edited; trace it from this
+table first.
+
 ## Terms
 
 - **Always Available:** Xteink advertises whenever Pager is active and no client
