@@ -734,7 +734,8 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
   renderer.clearScreen();
   renderer.drawText(NOTOSANS_18_FONT_ID, headingX, headingY, tr(STR_PAGER), true, EpdFontFamily::BOLD);
   const int batteryX = contentRight - metrics.batteryWidth;
-  const int batteryY = headingY + (headingHeight - metrics.batteryHeight) / 2;
+  const int batteryLabelY = headingY;
+  const int batteryY = batteryLabelY + 6;
   BaseTheme::drawBatteryOutline(renderer, batteryX, batteryY, metrics.batteryWidth, metrics.batteryHeight);
   GUI.fillBatteryIcon(renderer, Rect{batteryX, batteryY, metrics.batteryWidth, metrics.batteryHeight},
                       pagerBatteryPercent);
@@ -743,7 +744,7 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
     snprintf(batteryLabel, sizeof(batteryLabel), "%u%%", static_cast<unsigned int>(pagerBatteryPercent));
     const int batteryLabelWidth = renderer.getTextWidth(SMALL_FONT_ID, batteryLabel);
     renderer.drawText(SMALL_FONT_ID, batteryX - batteryLabelWidth - BaseTheme::batteryPercentSpacing,
-                      headingY + headingHeight / 2, batteryLabel);
+                      batteryLabelY, batteryLabel);
   }
   renderer.fillRect(timelineX, timelineTop, 3, timelineBottom - timelineTop);
 
