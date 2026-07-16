@@ -680,16 +680,12 @@ final class PagerGattClient {
                 return;
             }
             if (currentOperation == Operation.SEND) {
-                PagerProtocol.WriteCommand written = currentBatch == null || currentCommandIndex >= currentBatch.size()
-                        ? null : currentBatch.get(currentCommandIndex);
-                if (written != null && PagerProtocol.isValidEventId(written.eventId)) {
-                    RelayPreferences.markEventSent(context, written.eventId);
-                }
                 currentCommandIndex++;
                 if (currentBatch != null && currentCommandIndex < currentBatch.size()) {
                     writePayload();
                     return;
                 }
+                RelayPreferences.markBatchSent(context, currentBatch);
                 recordAcknowledgedWrite(false);
                 complete("Pager update sent.");
                 return;

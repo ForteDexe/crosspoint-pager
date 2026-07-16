@@ -8,7 +8,9 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 final class RelayPreferences {
     private static final String NAME = "pager_relay";
@@ -35,9 +37,13 @@ final class RelayPreferences {
     private static final String PAGER_TECHNICAL_STATUS = "pager_technical_status";
     private static final String AUTO_UPDATE_PAGER_POLICY = "auto_update_pager_policy";
     private static final String MAX_NOTIFICATIONS = "max_notifications";
+    private static final String NOTIFICATION_APP_FILTER_CONFIGURED = "notification_app_filter_configured";
+    private static final String TRACKED_NOTIFICATION_PACKAGES = "tracked_notification_packages";
     private static final String PENDING_EVENTS = "pending_events";
     private static final String SENT_EVENT_IDS = "sent_event_ids";
+    private static final String SENT_EVENT_CONTENTS = "sent_event_contents";
     private static final int MAX_SENT_EVENT_IDS = 64;
+    private static final int MAX_SENT_EVENT_CONTENTS = 64;
     private static final long PENDING_EVENT_MAX_AGE_MS = 75L * 60L * 1000L;
     static final int DEFAULT_MAX_NOTIFICATIONS = 4;
 
@@ -244,13 +250,54 @@ final class RelayPreferences {
         storePendingEvents(context, pending);
     }
 
+    static boolean isNotificationPackageTracked(Context context, String packageName) {
+        if (packageName == null || packageName.isEmpty()) {
+            return false;
+        }
+        SharedPreferences preferences = context.getSharedPreferences(NAME, Context.MODE_PRIVATE);
+        if (!preferences.getBoolean(NOTIFICATION_APP_FILTER_CONFIGURED, false)) {
+            return true;
+        }
+        Set<String> tracked = preferences.getStringSet(TRACKED_NOTIFICATION_PACKAGES, new HashSet<>());
+        return tracked != null && tracked.contains(packageName);
+    }
+
+    static boolean hasNotificationAppFilter(Context context) {
+        return context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+                .getBoolean(NOTIFICATION_APP_FILTER_CONFIGURED, false);
+    }
+
+    static Set<String> trackedNotificationPackages(Context context) {
+        Set<String> stored = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+                .getStringSet(TRACKED_NOTIFICATION_PACKAGES, new HashSet<>());
+        return stored == null ? new HashSet<>() : new HashSet<>(stored);
+    }
+
+    static void setTrackedNotificationPackages(Context context, Set<String> packages) {
+        Set<String> sanitized = new HashSet<>();
+        if (packages != null) {
+            for (String packageName : packages) {
+                if (packageName != null && !packageName.isEmpty()) {
+                    sanitized.add(packageName);
+                }
+            }
+        }
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(NOTIFICATION_APP_FILTER_CONFIGURED, true)
+                .putStringSet(TRACKED_NOTIFICATION_PACKAGES, sanitized)
+                .remove(PENDING_EVENTS)
+                .apply();
+    }
+
     static boolean enqueuePendingEvent(Context context, PagerProtocol.NotificationItem item) {
-        if (item == null || !PagerProtocol.isValidEventId(item.eventId) || hasSentEvent(context, item.eventId)) {
+        if (item == null || !PagerProtocol.isValidEventId(item.eventId)
+                || hasSentEvent(context, item.eventId) || hasSentContent(context, item)) {
             return false;
         }
         List<PagerProtocol.NotificationItem> pending = pendingEvents(context);
         for (PagerProtocol.NotificationItem existing : pending) {
-            if (existing.eventId.equals(item.eventId)) {
+            if (existing.eventId.equals(item.eventId)
+                    || PagerProtocol.hasSameNotificationContent(existing, item)) {
                 return false;
             }
         }
@@ -286,21 +333,35 @@ final class RelayPreferences {
         return result;
     }
 
-    static void markEventSent(Context context, String eventId) {
-        if (!PagerProtocol.isValidEventId(eventId)) {
+    static void markBatchSent(Context context, List<PagerProtocol.WriteCommand> batch) {
+        if (batch == null || batch.isEmpty()) {
             return;
         }
         List<PagerProtocol.NotificationItem> pending = pendingEvents(context);
-        pending.removeIf(item -> eventId.equals(item.eventId));
-        storePendingEvents(context, pending);
-
-        List<String> sent = sentEventIds(context);
-        sent.remove(eventId);
-        sent.add(eventId);
-        while (sent.size() > MAX_SENT_EVENT_IDS) {
-            sent.remove(0);
+        List<String> sentIds = sentEventIds(context);
+        List<PagerProtocol.NotificationItem> sentContents = sentEventContents(context);
+        for (PagerProtocol.WriteCommand command : batch) {
+            if (!PagerProtocol.isValidEventId(command.eventId)) {
+                continue;
+            }
+            pending.removeIf(item -> command.eventId.equals(item.eventId));
+            sentIds.remove(command.eventId);
+            sentIds.add(command.eventId);
+            if (command.notification == null) {
+                continue;
+            }
+            sentContents.removeIf(item -> PagerProtocol.hasSameNotificationContent(item, command.notification));
+            sentContents.add(command.notification);
         }
-        storeSentEventIds(context, sent);
+        storePendingEvents(context, pending);
+        while (sentIds.size() > MAX_SENT_EVENT_IDS) {
+            sentIds.remove(0);
+        }
+        storeSentEventIds(context, sentIds);
+        while (sentContents.size() > MAX_SENT_EVENT_CONTENTS) {
+            sentContents.remove(0);
+        }
+        storeSentEventContents(context, sentContents);
     }
 
     static void clearPendingEvents(Context context) {
@@ -309,6 +370,15 @@ final class RelayPreferences {
 
     private static boolean hasSentEvent(Context context, String eventId) {
         return sentEventIds(context).contains(eventId);
+    }
+
+    private static boolean hasSentContent(Context context, PagerProtocol.NotificationItem item) {
+        for (PagerProtocol.NotificationItem sent : sentEventContents(context)) {
+            if (PagerProtocol.hasSameNotificationContent(sent, item)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<String> sentEventIds(Context context) {
@@ -324,6 +394,27 @@ final class RelayPreferences {
             }
         } catch (JSONException ignored) {
             context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().remove(SENT_EVENT_IDS).apply();
+        }
+        return result;
+    }
+
+    private static List<PagerProtocol.NotificationItem> sentEventContents(Context context) {
+        List<PagerProtocol.NotificationItem> result = new ArrayList<>();
+        String raw = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+                .getString(SENT_EVENT_CONTENTS, "[]");
+        try {
+            JSONArray array = new JSONArray(raw);
+            for (int index = 0; index < array.length(); index++) {
+                JSONObject value = array.getJSONObject(index);
+                String eventId = value.optString("id");
+                if (!PagerProtocol.isValidEventId(eventId)) {
+                    continue;
+                }
+                result.add(new PagerProtocol.NotificationItem(eventId, "", value.optString("title"),
+                        value.optString("message")));
+            }
+        } catch (JSONException ignored) {
+            context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().remove(SENT_EVENT_CONTENTS).apply();
         }
         return result;
     }
@@ -354,6 +445,23 @@ final class RelayPreferences {
         }
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
                 .putString(SENT_EVENT_IDS, array.toString()).apply();
+    }
+
+    private static void storeSentEventContents(Context context, List<PagerProtocol.NotificationItem> sent) {
+        JSONArray array = new JSONArray();
+        for (PagerProtocol.NotificationItem item : sent) {
+            JSONObject value = new JSONObject();
+            try {
+                value.put("id", item.eventId);
+                value.put("title", item.title);
+                value.put("message", item.message);
+                array.put(value);
+            } catch (JSONException ignored) {
+                // String values cannot fail JSON encoding; skip a malformed item defensively.
+            }
+        }
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+                .putString(SENT_EVENT_CONTENTS, array.toString()).apply();
     }
 
     static boolean isPagerReadyForUse(Context context) {
@@ -387,8 +495,11 @@ final class RelayPreferences {
                 .remove(PAGER_POLICY_INTERVAL_MS)
                 .remove(PAGER_LAST_SYNC_WALL_CLOCK_MS)
                 .remove(PAGER_TECHNICAL_STATUS)
+                .remove(NOTIFICATION_APP_FILTER_CONFIGURED)
+                .remove(TRACKED_NOTIFICATION_PACKAGES)
                 .remove(PENDING_EVENTS)
                 .remove(SENT_EVENT_IDS)
+                .remove(SENT_EVENT_CONTENTS)
                 .remove(MAILBOX_INTERVAL_MS)
                 .remove(MAILBOX_WINDOW_MS)
                 .remove(MAILBOX_NEXT_WINDOW_WALL_CLOCK_MS);

@@ -11,6 +11,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
@@ -42,7 +43,9 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class MainActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 7;
@@ -76,6 +79,7 @@ public final class MainActivity extends Activity {
     private Button choosePager;
     private Button bluetoothPermissionAction;
     private Button notificationPermissionAction;
+    private Button notificationAppsButton;
     private Switch notificationRelaySwitch;
     private Switch beatModeSwitch;
     private Switch autoUpdatePolicySwitch;
@@ -148,6 +152,7 @@ public final class MainActivity extends Activity {
         updatePagerSummary();
         updateTechnicalStatus();
         updatePermissionStatus();
+        updateNotificationAppsButton();
         syncControlSwitches();
         if (hasBluetoothPermissions()) {
             PagerRelayService.resumeEnabledModes(this);
@@ -159,6 +164,7 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         updatePermissionStatus();
+        updateNotificationAppsButton();
     }
 
     @Override
@@ -295,7 +301,18 @@ public final class MainActivity extends Activity {
             PagerRelayService.startRelay(this);
             NotificationRelayService.requestStackRefresh(this);
         });
-        content.addView(notificationRelaySwitch);
+        LinearLayout relayControls = new LinearLayout(this);
+        relayControls.setOrientation(LinearLayout.HORIZONTAL);
+        relayControls.setGravity(Gravity.CENTER_VERTICAL);
+        relayControls.addView(notificationRelaySwitch, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        notificationAppsButton = new Button(this);
+        notificationAppsButton.setAllCaps(false);
+        notificationAppsButton.setOnClickListener(view -> showNotificationAppChooser());
+        relayControls.addView(notificationAppsButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        content.addView(relayControls);
+        updateNotificationAppsButton();
         relayStatus = text("Notification relay is idle.", 15, false);
         content.addView(relayStatus);
         registerLiveStatus(UiStatusChannel.RELAY, relayStatus);
@@ -680,6 +697,74 @@ public final class MainActivity extends Activity {
         if (notificationPermissionAction != null) {
             notificationPermissionAction.setVisibility(notificationsReady ? View.GONE : View.VISIBLE);
         }
+    }
+
+    private void updateNotificationAppsButton() {
+        if (notificationAppsButton == null) {
+            return;
+        }
+        if (!RelayPreferences.hasNotificationAppFilter(this)) {
+            notificationAppsButton.setText(R.string.notification_apps_all);
+            return;
+        }
+        notificationAppsButton.setText(getString(R.string.notification_apps_count,
+                RelayPreferences.trackedNotificationPackages(this).size()));
+    }
+
+    private void showNotificationAppChooser() {
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> resolvedApps = getPackageManager().queryIntentActivities(
+                launcherIntent, PackageManager.MATCH_ALL);
+        List<NotificationAppChoice> choices = new ArrayList<>();
+        Set<String> seenPackages = new HashSet<>();
+        for (ResolveInfo resolvedApp : resolvedApps) {
+            if (resolvedApp.activityInfo == null) {
+                continue;
+            }
+            String packageName = resolvedApp.activityInfo.packageName;
+            if (packageName == null || packageName.equals(getPackageName()) || !seenPackages.add(packageName)) {
+                continue;
+            }
+            CharSequence label = resolvedApp.loadLabel(getPackageManager());
+            String displayName = TextUtils.isEmpty(label) ? packageName : label.toString();
+            choices.add(new NotificationAppChoice(packageName, displayName));
+        }
+        choices.sort((first, second) -> first.label.compareToIgnoreCase(second.label));
+        if (choices.isEmpty()) {
+            relayStatus.setText(R.string.notification_apps_unavailable);
+            return;
+        }
+
+        Set<String> selectedPackages = RelayPreferences.trackedNotificationPackages(this);
+        boolean selectingAll = !RelayPreferences.hasNotificationAppFilter(this);
+        String[] labels = new String[choices.size()];
+        boolean[] checked = new boolean[choices.size()];
+        for (int index = 0; index < choices.size(); index++) {
+            NotificationAppChoice choice = choices.get(index);
+            labels[index] = choice.label;
+            checked[index] = selectingAll || selectedPackages.contains(choice.packageName);
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.notification_apps_title)
+                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.save_notification_apps, (dialog, which) -> {
+                    Set<String> updatedPackages = new HashSet<>();
+                    for (int index = 0; index < choices.size(); index++) {
+                        if (checked[index]) {
+                            updatedPackages.add(choices.get(index).packageName);
+                        }
+                    }
+                    RelayPreferences.setTrackedNotificationPackages(this, updatedPackages);
+                    updateNotificationAppsButton();
+                    relayStatus.setText(R.string.notification_apps_updated);
+                    if (RelayPreferences.isEnabled(this)) {
+                        NotificationRelayService.requestStackRefresh(this);
+                    }
+                })
+                .show();
     }
 
     private void updateEnrollmentResetAdvice() {
@@ -1170,6 +1255,16 @@ public final class MainActivity extends Activity {
             this.time = time;
             this.title = title;
             this.message = message;
+        }
+    }
+
+    private static final class NotificationAppChoice {
+        final String packageName;
+        final String label;
+
+        NotificationAppChoice(String packageName, String label) {
+            this.packageName = packageName;
+            this.label = label;
         }
     }
 

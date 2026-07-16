@@ -76,6 +76,19 @@ public final class PagerProtocolTest {
         assertEquals(11, PagerProtocol.MAX_NOTIFICATION_COUNT);
     }
 
+    @Test
+    public void duplicateNotificationContentIgnoresEventIdAndTime() {
+        PagerProtocol.NotificationItem first = new PagerProtocol.NotificationItem(
+                "0011223344556677", "8:28 PM", "Title", "Body");
+        PagerProtocol.NotificationItem repeated = new PagerProtocol.NotificationItem(
+                "8899aabbccddeeff", "8:29 PM", "Title", "Body");
+        PagerProtocol.NotificationItem changed = new PagerProtocol.NotificationItem(
+                "8899aabbccddeeff", "8:29 PM", "Title", "Updated body");
+
+        assertTrue(PagerProtocol.hasSameNotificationContent(first, repeated));
+        assertFalse(PagerProtocol.hasSameNotificationContent(first, changed));
+    }
+
     private static String repeat(char value, int count) {
         return String.join("", Collections.nCopies(count, Character.toString(value)));
     }

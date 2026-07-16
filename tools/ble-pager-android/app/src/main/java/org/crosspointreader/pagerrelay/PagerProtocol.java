@@ -48,7 +48,7 @@ final class PagerProtocol {
             NotificationItem item = notifications.get(index);
             commands.add(new WriteCommand("ADD",
                     batchId + "\n" + item.eventId + "\n" + item.time + "\n" + item.title + "\n" + item.message,
-                    item.eventId));
+                    item.eventId, item));
         }
         commands.add(new WriteCommand("END", batchId, ""));
         return commands;
@@ -137,6 +137,11 @@ final class PagerProtocol {
     static int maxAddMessageBytes(String time, String title) {
         int usedVariableBytes = utf8Length(time == null ? "" : time) + utf8Length(title == null ? "" : title);
         return Math.max(0, MAX_MESSAGE_BYTES - usedVariableBytes);
+    }
+
+    static boolean hasSameNotificationContent(NotificationItem first, NotificationItem second) {
+        return first != null && second != null
+                && first.title.equals(second.title) && first.message.equals(second.message);
     }
 
     static String formatStatus(String rawStatus) {
@@ -279,11 +284,17 @@ final class PagerProtocol {
         final String operation;
         final String data;
         final String eventId;
+        final NotificationItem notification;
 
         WriteCommand(String operation, String data, String eventId) {
+            this(operation, data, eventId, null);
+        }
+
+        WriteCommand(String operation, String data, String eventId, NotificationItem notification) {
             this.operation = operation;
             this.data = data;
             this.eventId = eventId;
+            this.notification = notification;
         }
     }
 

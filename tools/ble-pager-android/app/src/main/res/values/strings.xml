@@ -7,6 +7,12 @@
     <string name="notification_access_required">Allow notification access for CrossPoint Pager first.</string>
     <string name="payload_byte_count">%1$d / %2$d UTF-8 bytes</string>
     <string name="notification_relay">Notification relay</string>
+    <string name="notification_apps_all">Apps: All</string>
+    <string name="notification_apps_count">Apps: %1$d</string>
+    <string name="notification_apps_title">Track notification apps</string>
+    <string name="save_notification_apps">Save apps</string>
+    <string name="notification_apps_unavailable">No launchable apps are available to select.</string>
+    <string name="notification_apps_updated">Notification app selection updated. Unsent relay notifications were cleared.</string>
     <string name="maximum_notifications">Maximum notifications</string>
     <string name="maximum_notifications_hint">1–11</string>
     <string name="maximum_notifications_summary">Newest notifications are shown first. Older notifications beyond this limit are discarded from the Pager snapshot.</string>

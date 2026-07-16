@@ -61,7 +61,9 @@ public final class NotificationRelayService extends NotificationListenerService 
 
     @Override
     public void onNotificationPosted(StatusBarNotification notification) {
-        if (RelayPreferences.isEnabled(this) && !getPackageName().equals(notification.getPackageName())) {
+        if (RelayPreferences.isEnabled(this)
+                && !getPackageName().equals(notification.getPackageName())
+                && RelayPreferences.isNotificationPackageTracked(this, notification.getPackageName())) {
             scheduleStackRefresh();
         }
     }
@@ -126,6 +128,7 @@ public final class NotificationRelayService extends NotificationListenerService 
         Notification source = notification.getNotification();
         if (notification.isOngoing()
                 || getPackageName().equals(notification.getPackageName())
+                || !RelayPreferences.isNotificationPackageTracked(this, notification.getPackageName())
                 || (source.flags & Notification.FLAG_GROUP_SUMMARY) != 0) {
             return null;
         }
