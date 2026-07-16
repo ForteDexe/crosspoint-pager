@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">CrossPoint Pager</string>
-    <string name="relay_channel_name">Pager delivery</string>
-    <string name="relay_notification_title">CrossPoint Pager is ready</string>
-    <string name="relay_notification_text">New notifications will be sent to CrossPoint Pager.</string>
+    <string name="relay_channel_name">Pager background service</string>
+    <string name="relay_notification_title">CrossPoint Pager</string>
+    <string name="relay_notification_text">Background delivery is active.</string>
     <string name="notification_access_required">Allow notification access for CrossPoint Pager first.</string>
     <string name="payload_byte_count">%1$d / %2$d UTF-8 bytes</string>
     <string name="notification_relay">Notification relay</string>
@@ -55,7 +55,6 @@
     <string name="notification_access_ready">Notification access: Ready</string>
     <string name="notification_access_required_status">Notification access: Action required</string>
     <string name="mailbox_timing_not_used">Not used while Availability is Always Available.</string>
-    <string name="ble_details_unavailable">No BLE link details stored yet.</string>
     <string name="test_mode_connect_per_message">Test send mode: Connect per message. The app disconnects after delivery.</string>
     <string name="test_mode_keep_connected">Test send mode: Keep connected while relay is active. A test send simulates this mode by leaving the BLE link open after delivery; select Connect per message to disconnect it.</string>
     <plurals name="duration_minutes">

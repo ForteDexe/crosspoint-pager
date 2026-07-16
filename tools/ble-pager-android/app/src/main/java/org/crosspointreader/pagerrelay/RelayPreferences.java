@@ -19,7 +19,6 @@ final class RelayPreferences {
     private static final String KEEP_CONNECTED = "keep_connected";
     private static final String LOG_ENABLED = "log_enabled";
     private static final String SHOW_NOTIFICATION_RELAY_LOG = "show_notification_relay_log";
-    private static final String SHOW_BEAT_MODE_LOG = "show_beat_mode_log";
     private static final String MAILBOX_INTERVAL_MS = "mailbox_interval_ms";
     private static final String MAILBOX_WINDOW_MS = "mailbox_window_ms";
     private static final String MAILBOX_NEXT_WINDOW_WALL_CLOCK_MS = "mailbox_next_window_wall_clock_ms";
@@ -81,15 +80,6 @@ final class RelayPreferences {
     static void setShowNotificationRelayLog(Context context, boolean show) {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
                 .putBoolean(SHOW_NOTIFICATION_RELAY_LOG, show).apply();
-    }
-
-    static boolean showBeatModeLog(Context context) {
-        SharedPreferences preferences = context.getSharedPreferences(NAME, Context.MODE_PRIVATE);
-        return preferences.getBoolean(SHOW_BEAT_MODE_LOG, preferences.getBoolean(LOG_ENABLED, true));
-    }
-
-    static void setShowBeatModeLog(Context context, boolean show) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().putBoolean(SHOW_BEAT_MODE_LOG, show).apply();
     }
 
     static long mailboxIntervalMs(Context context) {

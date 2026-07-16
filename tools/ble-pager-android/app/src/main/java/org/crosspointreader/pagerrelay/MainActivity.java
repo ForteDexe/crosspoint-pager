@@ -64,11 +64,9 @@ public final class MainActivity extends Activity {
     private TextView testStatus;
     private TextView policyStatus;
     private TextView relayStatus;
-    private TextView beatStatus;
     private TextView statusLog;
     private TextView learnedMailboxTiming;
     private TextView pagerSummary;
-    private TextView technicalStatus;
     private TextView bluetoothPermissionStatus;
     private TextView notificationPermissionStatus;
     private TextView enrollmentResetAdvice;
@@ -150,7 +148,6 @@ public final class MainActivity extends Activity {
                 RelayPreferences.isPolicyRetryActive(this));
         updateLearnedMailboxTiming();
         updatePagerSummary();
-        updateTechnicalStatus();
         updatePermissionStatus();
         updateNotificationAppsButton();
         syncControlSwitches();
@@ -250,22 +247,6 @@ public final class MainActivity extends Activity {
         updateLearnedMailboxTiming();
         updatePagerSummary();
 
-        TextView permissionsHeading = text("App access", 20, true);
-        permissionsHeading.setPadding(0, dp(16), 0, 0);
-        content.addView(permissionsHeading);
-        bluetoothPermissionStatus = text("", 15, true);
-        content.addView(bluetoothPermissionStatus);
-        bluetoothPermissionAction = button("Grant Bluetooth access");
-        bluetoothPermissionAction.setOnClickListener(view -> requestBluetoothPermissions());
-        content.addView(bluetoothPermissionAction);
-        notificationPermissionStatus = text("", 15, true);
-        content.addView(notificationPermissionStatus);
-        notificationPermissionAction = button("Open notification access");
-        notificationPermissionAction.setOnClickListener(
-                view -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
-        content.addView(notificationPermissionAction);
-        updatePermissionStatus();
-
         TextView connectionHeading = text("Connection mode", 20, true);
         connectionHeading.setPadding(0, dp(16), 0, 0);
         content.addView(connectionHeading);
@@ -339,6 +320,22 @@ public final class MainActivity extends Activity {
         content.addView(maxNotifications);
         content.addView(text(getString(R.string.maximum_notifications_summary), 14, false));
 
+        TextView permissionsHeading = text("App access", 20, true);
+        permissionsHeading.setPadding(0, dp(16), 0, 0);
+        content.addView(permissionsHeading);
+        bluetoothPermissionStatus = text("", 15, true);
+        content.addView(bluetoothPermissionStatus);
+        bluetoothPermissionAction = button("Grant Bluetooth access");
+        bluetoothPermissionAction.setOnClickListener(view -> requestBluetoothPermissions());
+        content.addView(bluetoothPermissionAction);
+        notificationPermissionStatus = text("", 15, true);
+        content.addView(notificationPermissionStatus);
+        notificationPermissionAction = button("Open notification access");
+        notificationPermissionAction.setOnClickListener(
+                view -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        content.addView(notificationPermissionAction);
+        updatePermissionStatus();
+
         LinearLayout debugContent = new LinearLayout(this);
         debugContent.setOrientation(LinearLayout.VERTICAL);
         debugContent.setVisibility(View.GONE);
@@ -350,39 +347,6 @@ public final class MainActivity extends Activity {
         });
         content.addView(debugToggle);
         content.addView(debugContent);
-
-        beatModeSwitch = switchControl(getString(R.string.beat_mode), RelayPreferences.isBeatEnabled(this));
-        beatModeSwitch.setOnCheckedChangeListener((view, enabled) -> {
-            if (updatingControlSwitches) {
-                return;
-            }
-            if (!enabled) {
-                PagerRelayService.stopBeat(this);
-                return;
-            }
-            if (!RelayPreferences.isPagerReadyForUse(this)) {
-                setControlSwitchChecked(beatModeSwitch, false);
-                beatStatus.setText(R.string.refresh_policy_before_relay);
-                return;
-            }
-            if (!hasBluetoothPermissions()) {
-                setControlSwitchChecked(beatModeSwitch, false);
-                requestBluetoothPermissions();
-                return;
-            }
-            PagerRelayService.startBeat(this);
-        });
-        debugContent.addView(beatModeSwitch);
-        beatStatus = text("Beat mode is idle.", 15, false);
-        debugContent.addView(beatStatus);
-        registerLiveStatus(UiStatusChannel.BEAT, beatStatus);
-
-        TextView technicalHeading = text("BLE details", 20, true);
-        technicalHeading.setPadding(0, dp(16), 0, 0);
-        debugContent.addView(technicalHeading);
-        technicalStatus = text("", 14, false);
-        debugContent.addView(technicalStatus);
-        updateTechnicalStatus();
 
         TextView testHeading = text("Test page", 20, true);
         testHeading.setPadding(0, dp(16), 0, 0);
@@ -456,7 +420,30 @@ public final class MainActivity extends Activity {
         TextView logHeading = text("Event log", 20, true);
         logHeading.setPadding(0, dp(16), 0, 0);
         debugContent.addView(logHeading);
-        debugContent.addView(text("Choose which events appear below.", 14, false));
+        debugContent.addView(text("Beat mode records reachability checks here.", 14, false));
+        beatModeSwitch = switchControl(getString(R.string.beat_mode), RelayPreferences.isBeatEnabled(this));
+        beatModeSwitch.setOnCheckedChangeListener((view, enabled) -> {
+            if (updatingControlSwitches) {
+                return;
+            }
+            if (!enabled) {
+                PagerRelayService.stopBeat(this);
+                return;
+            }
+            if (!RelayPreferences.isPagerReadyForUse(this)) {
+                setControlSwitchChecked(beatModeSwitch, false);
+                recordStatus(getString(R.string.refresh_policy_before_relay), 0L,
+                        EventLogCategory.BEAT_MODE, UiStatusChannel.BEAT);
+                return;
+            }
+            if (!hasBluetoothPermissions()) {
+                setControlSwitchChecked(beatModeSwitch, false);
+                requestBluetoothPermissions();
+                return;
+            }
+            PagerRelayService.startBeat(this);
+        });
+        debugContent.addView(beatModeSwitch);
         Switch notificationLogSwitch = switchControl(getString(R.string.notification_relay),
                 RelayPreferences.showNotificationRelayLog(this));
         notificationLogSwitch.setOnCheckedChangeListener((view, show) -> {
@@ -464,13 +451,6 @@ public final class MainActivity extends Activity {
             renderEventLog();
         });
         debugContent.addView(notificationLogSwitch);
-        Switch beatLogSwitch = switchControl(getString(R.string.beat_mode),
-                RelayPreferences.showBeatModeLog(this));
-        beatLogSwitch.setOnCheckedChangeListener((view, show) -> {
-            RelayPreferences.setShowBeatModeLog(this, show);
-            renderEventLog();
-        });
-        debugContent.addView(beatLogSwitch);
         Button clearLog = button(getString(R.string.clear_log));
         clearLog.setOnClickListener(view -> {
             statusLines.clear();
@@ -509,7 +489,6 @@ public final class MainActivity extends Activity {
         }
         updateLearnedMailboxTiming();
         updatePagerSummary();
-        updateTechnicalStatus();
         updatePermissionStatus();
         if (channel == UiStatusChannel.POLICY && value.startsWith("Pager policy")) {
             policyReceivedThisSession = true;
@@ -578,13 +557,9 @@ public final class MainActivity extends Activity {
             return;
         }
         boolean showNotificationRelay = RelayPreferences.showNotificationRelayLog(this);
-        boolean showBeatMode = RelayPreferences.showBeatModeLog(this);
         StringBuilder visibleLog = new StringBuilder();
         for (LogEntry entry : statusLines) {
-            boolean visible = entry.category == EventLogCategory.NOTIFICATION_RELAY
-                    ? showNotificationRelay
-                    : showBeatMode;
-            if (!visible) {
+            if (entry.category == EventLogCategory.NOTIFICATION_RELAY && !showNotificationRelay) {
                 continue;
             }
             if (visibleLog.length() > 0) {
@@ -655,10 +630,15 @@ public final class MainActivity extends Activity {
                         .format(new java.util.Date(lastSyncMs))
                 : "Never";
         boolean enrollmentReady = RelayPreferences.pagerEnrolled(this) && RelayPreferences.hasPagerIdentity(this);
-        pagerSummary.setText("Device: " + device
-                + "\nEnrollment: " + (enrollmentReady ? "Ready" : "Setup required")
-                + "\nAvailability: " + availabilityText
-                + "\nLast policy refresh: " + lastSync);
+        StringBuilder summary = new StringBuilder("Device: ").append(device)
+                .append("\nEnrollment: ").append(enrollmentReady ? "Ready" : "Setup required")
+                .append("\nAvailability: ").append(availabilityText)
+                .append("\nLast policy refresh: ").append(lastSync);
+        String technicalStatus = RelayPreferences.pagerTechnicalStatus(this);
+        if (!technicalStatus.isEmpty()) {
+            summary.append("\n\nBLE details\n").append(technicalStatus);
+        }
+        pagerSummary.setText(summary);
         if (forgetPager != null) {
             forgetPager.setVisibility(RelayPreferences.hasPagerSelection(this) ? View.VISIBLE : View.GONE);
         }
@@ -667,14 +647,6 @@ public final class MainActivity extends Activity {
                     ? R.string.change_xteink
                     : R.string.choose_xteink);
         }
-    }
-
-    private void updateTechnicalStatus() {
-        if (technicalStatus == null) {
-            return;
-        }
-        String savedStatus = RelayPreferences.pagerTechnicalStatus(this);
-        technicalStatus.setText(savedStatus.isEmpty() ? getString(R.string.ble_details_unavailable) : savedStatus);
     }
 
     private void updatePermissionStatus() {

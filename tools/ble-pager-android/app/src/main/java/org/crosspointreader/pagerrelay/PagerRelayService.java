@@ -33,7 +33,7 @@ public final class PagerRelayService extends Service {
     private static final String EXTRA_SEND_CHANNEL = "send_channel";
     private static final String EXTRA_DEVICE_ADDRESS = "device_address";
     private static final String EXTRA_DEVICE_LABEL = "device_label";
-    private static final String CHANNEL_ID = "pager_relay";
+    private static final String CHANNEL_ID = "pager_relay_background";
     private static final int FOREGROUND_NOTIFICATION_ID = 101;
 
     private PagerGattClient client;
@@ -217,12 +217,16 @@ public final class PagerRelayService extends Service {
                 .setContentTitle(getString(R.string.relay_notification_title))
                 .setContentText(getString(R.string.relay_notification_text))
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .build();
     }
 
     private void createChannel() {
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID, getString(R.string.relay_channel_name), NotificationManager.IMPORTANCE_LOW);
+        channel.setSound(null, null);
+        channel.enableVibration(false);
+        channel.setShowBadge(false);
         getSystemService(NotificationManager.class).createNotificationChannel(channel);
     }
 

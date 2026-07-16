@@ -758,9 +758,6 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
     switch (pagerContentType) {
       case PagerContentType::NotificationStack: {
         if (pagerNotificationCount == 0) {
-          renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, tr(STR_BLUETOOTH_WAITING), true,
-                                    EpdFontFamily::BOLD);
-          renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
           break;
         }
         const int availableHeight = timelineBottom - timelineTop;
@@ -802,9 +799,6 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
         break;
       }
       case PagerContentType::None:
-        renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, tr(STR_BLUETOOTH_WAITING), true,
-                                  EpdFontFamily::BOLD);
-        renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 20, tr(STR_PAGER_STANDBY));
         break;
     }
   }
