@@ -86,6 +86,8 @@ bool MappedInputManager::wasAnyReleased() const { return gpio.wasAnyReleased(); 
 
 unsigned long MappedInputManager::getHeldTime() const { return gpio.getHeldTime(); }
 
+unsigned long MappedInputManager::getPowerButtonHeldTime() const { return gpio.getPowerButtonHeldTime(); }
+
 MappedInputManager::Labels MappedInputManager::mapLabels(const char* back, const char* confirm, const char* previous,
                                                          const char* next) const {
   // Swap previous/next labels to match the page turn direction swap in INVERTED and LANDSCAPE_CCW.

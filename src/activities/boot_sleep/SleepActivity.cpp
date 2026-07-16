@@ -188,19 +188,23 @@ void SleepActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Power)) {
-    pagerPowerButtonPressedAt = millis();
-  }
-
-  if (mappedInput.wasReleased(MappedInputManager::Button::Power) && pagerPowerButtonPressedAt != 0) {
-    const bool shouldExit = millis() - pagerPowerButtonPressedAt >= SETTINGS.getPowerButtonDuration();
-    pagerPowerButtonPressedAt = 0;
-    if (shouldExit) {
-      exitPager();
+  if (!pagerExitArmed) {
+    if (!mappedInput.isPressed(MappedInputManager::Button::Power)) {
+      pagerExitArmed = true;
     }
     return;
   }
-  if (pagerPowerButtonPressedAt != 0) {
+
+  if (!pagerExitPending && mappedInput.isPressed(MappedInputManager::Button::Power) &&
+      mappedInput.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
+    pagerExitPending = true;
+    return;
+  }
+
+  if (pagerExitPending) {
+    if (!mappedInput.isPressed(MappedInputManager::Button::Power)) {
+      exitPager();
+    }
     return;
   }
 

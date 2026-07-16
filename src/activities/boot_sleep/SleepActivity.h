@@ -66,7 +66,8 @@ class SleepActivity final : public Activity {
   bool pagerReturnToReader = false;
   PagerContentType pagerContentType = PagerContentType::None;
   bool pagerLowBatteryDetected = false;
-  unsigned long pagerPowerButtonPressedAt = 0;
+  bool pagerExitArmed = false;
+  bool pagerExitPending = false;
   unsigned long lastPagerBatteryCheckMs = 0;
   uint16_t pagerBatteryPercent = 100;
   int pagerUpdatesUntilCleanRefresh = 0;
