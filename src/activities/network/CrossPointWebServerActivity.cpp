@@ -74,6 +74,11 @@ void CrossPointWebServerActivity::onEnter() {
   lastHandleClientTime = 0;
   requestUpdate();
 
+  if (resumeJoinNetwork) {
+    onNetworkModeSelected(NetworkMode::JOIN_NETWORK);
+    return;
+  }
+
   // Launch network mode selection subactivity
   LOG_DBG("WEBACT", "Launching NetworkModeSelectionActivity...");
   startActivityForResult(std::make_unique<NetworkModeSelectionActivity>(renderer, mappedInput),
@@ -110,6 +115,10 @@ void CrossPointWebServerActivity::onExit() {
 }
 
 void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) {
+  if (mode == NetworkMode::JOIN_NETWORK && restartToJoinNetworkIfRequired()) {
+    return;
+  }
+
   const char* modeName = "Join Network";
   if (mode == NetworkMode::CONNECT_CALIBRE) {
     modeName = "Connect to Calibre";

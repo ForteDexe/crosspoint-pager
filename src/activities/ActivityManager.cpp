@@ -169,8 +169,8 @@ void ActivityManager::replaceActivity(std::unique_ptr<Activity>&& newActivity) {
   }
 }
 
-void ActivityManager::goToFileTransfer() {
-  replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput));
+void ActivityManager::goToFileTransfer(const bool resumeJoinNetwork) {
+  replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput, resumeJoinNetwork));
 }
 
 void ActivityManager::goToSettings() { replaceActivity(std::make_unique<SettingsActivity>(renderer, mappedInput)); }

@@ -119,8 +119,8 @@ unsigned long t2 = 0;
 RTC_NOINIT_ATTR uint32_t silentRebootMagic;
 RTC_NOINIT_ATTR uint32_t silentRebootTarget;
 constexpr uint32_t SILENT_REBOOT_MAGIC = 0xC1EAB007;
-constexpr uint32_t SILENT_REBOOT_TARGET_HOME = 0;
-constexpr uint32_t SILENT_REBOOT_TARGET_READER = 1;
+enum class SilentRebootTarget : uint32_t { Home = 0, Reader = 1, JoinNetwork = 2 };
+static bool cleanWifiRestartRequired = false;
 
 // How the device is coming back to life, resolved once at boot. Both resume
 // flows suppress the splash and leave the panel holding its pre-boot frame; a
@@ -139,28 +139,32 @@ enum class BootResume : uint8_t {
 // startDeepSleep() does not return, so a set latch only ends at the wakeup reset.
 static bool deepSleepInProgress = false;
 
-void silentRestart() {
-  if (deepSleepInProgress) return;  // sleeping supersedes the heap-defrag reboot
-  silentRebootTarget = SILENT_REBOOT_TARGET_HOME;
+bool performSilentRestart(const SilentRebootTarget target, const char* targetName) {
+  if (deepSleepInProgress) return false;  // sleeping supersedes the heap-defrag reboot
+  silentRebootTarget = static_cast<uint32_t>(target);
   silentRebootMagic = SILENT_REBOOT_MAGIC;
-  LOG_DBG("MAIN", "Silent restart (target=home)");
-  // E-ink retains the previous frame until Home's first paint lands (~2-3s).
+  LOG_DBG("MAIN", "Silent restart (target=%s)", targetName);
+  // E-ink retains the previous frame until the target's first paint lands.
   // Without an overlay, users don't see the reboot and fire input through to
-  // Home. Select on the default selectorIndex=0 then opens the most-recent
-  // book, looking like a trampoline back to the reader they just exited.
+  // the resumed activity.
   GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
   delay(50);
   ESP.restart();
+  return true;
 }
 
-void silentRestartToReader() {
-  if (deepSleepInProgress) return;  // sleeping supersedes the heap-defrag reboot
-  silentRebootTarget = SILENT_REBOOT_TARGET_READER;
-  silentRebootMagic = SILENT_REBOOT_MAGIC;
-  LOG_DBG("MAIN", "Silent restart (target=reader)");
-  GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
-  delay(50);
-  ESP.restart();
+void silentRestart() { performSilentRestart(SilentRebootTarget::Home, "home"); }
+
+void silentRestartToReader() { performSilentRestart(SilentRebootTarget::Reader, "reader"); }
+
+void requireCleanWifiRestartAfterPager() { cleanWifiRestartRequired = true; }
+
+bool restartToJoinNetworkIfRequired() {
+  if (!cleanWifiRestartRequired) {
+    return false;
+  }
+  cleanWifiRestartRequired = false;
+  return performSilentRestart(SilentRebootTarget::JoinNetwork, "join-network");
 }
 
 // Verify power button press duration on wake-up from deep sleep
@@ -344,8 +348,10 @@ void setup() {
   // Read-and-clear so a panic later in setup() doesn't loop into silent reboot.
   // Bound the target range too — RTC_NOINIT memory is uninitialized on cold boot.
   const bool isSilentReboot = (silentRebootMagic == SILENT_REBOOT_MAGIC);
-  const uint32_t snapshotTarget =
-      (isSilentReboot && silentRebootTarget <= SILENT_REBOOT_TARGET_READER) ? silentRebootTarget : 0;
+  const auto snapshotTarget =
+      (isSilentReboot && silentRebootTarget <= static_cast<uint32_t>(SilentRebootTarget::JoinNetwork))
+          ? static_cast<SilentRebootTarget>(silentRebootTarget)
+          : SilentRebootTarget::Home;
   silentRebootMagic = 0;
   silentRebootTarget = 0;
 
@@ -459,14 +465,22 @@ void setup() {
   } else if (HalSystem::isRebootFromPanic()) {
     // If we rebooted from a panic, go to crash report screen to show the panic info
     activityManager.goToCrashReport();
-  } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_READER &&
-             !APP_STATE.openEpubPath.empty()) {
-    activityManager.goToReader(APP_STATE.openEpubPath);
   } else if (resume == BootResume::Silent) {
-    // target == home (or reader with no open book): land on home — don't fall
-    // through to the sleep-wake "resume reader" logic, which fires on stale
-    // openEpubPath + lastSleepFromReader from a prior session.
-    activityManager.goHome();
+    switch (snapshotTarget) {
+      case SilentRebootTarget::Home:
+        activityManager.goHome();
+        break;
+      case SilentRebootTarget::Reader:
+        if (APP_STATE.openEpubPath.empty()) {
+          activityManager.goHome();
+        } else {
+          activityManager.goToReader(APP_STATE.openEpubPath);
+        }
+        break;
+      case SilentRebootTarget::JoinNetwork:
+        activityManager.goToFileTransfer(true);
+        break;
+    }
   } else if (APP_STATE.openEpubPath.empty() || !APP_STATE.lastSleepFromReader ||
              mappedInputManager.isPressed(MappedInputManager::Button::Back) || APP_STATE.readerActivityLoadCount > 0) {
     // Boot to home screen if no book is open, last sleep was not from reader, back button is held, or reader activity

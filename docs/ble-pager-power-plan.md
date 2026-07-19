@@ -81,6 +81,12 @@ the X3 USB CDC port resets the device, and USB charging makes the fuel-gauge
 current different from the device's battery draw. Measure on battery power
 with an inline meter or shunt instead.
 
+After a Pager session, the first **Join Network** request performs the existing
+silent restart and resumes directly at Wi-Fi selection. Hardware testing showed
+that the combined reader, Pager, and Wi-Fi lifecycle otherwise leaves too little
+contiguous heap for the hosted File Manager. The restart is one-shot and is not
+used by reader-only boots or other network modes.
+
 Do not claim multi-month battery life from this phase until it is measured.
 
 ### 3. Test a radio-off periodic mailbox

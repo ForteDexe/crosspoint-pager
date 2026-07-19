@@ -19,6 +19,7 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "SilentRestart.h"
 #include "activities/reader/ReaderUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -174,6 +175,7 @@ void SleepActivity::onExit() {
   if (pagerMode) {
     blePager.end();
     powerManager.disablePagerLightSleep();
+    requireCleanWifiRestartAfterPager();
   }
   Activity::onExit();
 }
