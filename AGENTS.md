@@ -78,6 +78,11 @@ CP1252. For C/C++ changes, build before handoff; run `pio check -e default`
 when the change warrants static analysis. Report that device, battery, BLE, and
 all-orientation testing still require hardware unless actually performed.
 
+For persistent USB serial captures, including the `pager_power_debug`
+build/flash workflow and PlatformIO's `log2file` filter, follow
+`docs/contributing/testing-debugging.md`. The Pager-specific connection guide at
+`docs/pager-web-bluetooth.md` links to the same procedure.
+
 For the Android companion, reuse the existing user-local toolchain instead of
 downloading another SDK or JDK:
 

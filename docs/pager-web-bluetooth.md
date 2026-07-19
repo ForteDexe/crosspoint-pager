@@ -36,6 +36,9 @@ serial logging for battery tests. For serial diagnosis, build
 `pager_power_debug`; use `-e default` only when you specifically want the normal
 reader build.
 
+For a repeatable USB diagnosis that also saves the output to `logs/`, follow
+[Testing and Debugging](contributing/testing-debugging.md#pager-power-build).
+
 ## Flash the firmware
 
 With the Xteink connected by USB and no serial monitor open, flash the same
