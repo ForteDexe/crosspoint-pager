@@ -102,7 +102,9 @@ write before disconnecting the setup link and entering configured periodic
 availability. Pager refreshes the
 e-ink screen only when the display payload changes. It uses fast e-ink
 refreshes for message updates and performs its cleanup refresh according to
-**Settings > Display > Refresh Frequency**.
+**Settings > Display > Refresh Frequency**; **Never** disables periodic
+cleanup. Pager cleanup remains a full refresh regardless of the reader-only
+**Screen Maintenance** action.
 
 **Always Available** is the X3-controlled continuous policy: the browser
 connection stays open until the browser or user disconnects. Its Normal Power

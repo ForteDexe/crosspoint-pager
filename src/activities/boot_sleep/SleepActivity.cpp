@@ -422,6 +422,10 @@ void SleepActivity::exitPager() {
 }
 
 HalDisplay::RefreshMode SleepActivity::nextPagerRefreshMode() {
+  if (pagerUpdatesUntilCleanRefresh == CrossPointSettings::REFRESH_COUNTDOWN_DISABLED) {
+    return HalDisplay::FAST_REFRESH;
+  }
+
   if (pagerUpdatesUntilCleanRefresh <= 1) {
     pagerUpdatesUntilCleanRefresh = SETTINGS.getRefreshFrequency();
     return HalDisplay::HALF_REFRESH;

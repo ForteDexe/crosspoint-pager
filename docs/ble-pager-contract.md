@@ -338,7 +338,9 @@ it. There is no scrolling or wrapped continuation line.
    timeout, or once after the standalone-ADD debounce. It does not repaint for
    duplicate event IDs or an empty batch.
 6. Changed content uses the existing fast e-ink refresh cycle; cleanup follows
-   **Settings > Display > Refresh Frequency**. `END` never means full refresh.
+   **Settings > Display > Refresh Frequency**; **Never** disables periodic
+   cleanup. Pager cleanup remains full regardless of the reader-only **Screen
+   Maintenance** action. `END` never means full refresh.
 7. Entering or exiting Pager does not force an unrelated full refresh. Battery
    changes alone do not repaint the screen.
 

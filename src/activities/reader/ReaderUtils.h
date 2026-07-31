@@ -3,6 +3,7 @@
 #include <CrossPointState.h>
 #include <CrossPointSettings.h>
 #include <GfxRenderer.h>
+#include <HalGPIO.h>
 #include <HalTiltSensor.h>
 #include <Logging.h>
 
@@ -60,15 +61,50 @@ inline PageTurnResult detectPageTurn(const MappedInputManager& input) {
   return {prev, next, tiltPrev || tiltNext};
 }
 
-inline void displayWithRefreshCycle(const GfxRenderer& renderer, int& pagesUntilFullRefresh) {
-  if (pagesUntilFullRefresh <= 1) {
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-    pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
+inline bool isRefreshActionDue(const int pagesUntilRefreshAction) {
+  return pagesUntilRefreshAction != CrossPointSettings::REFRESH_COUNTDOWN_DISABLED && pagesUntilRefreshAction <= 1;
+}
+
+inline bool isFullRefreshForced(const int pagesUntilRefreshAction) {
+  return pagesUntilRefreshAction == CrossPointSettings::REFRESH_COUNTDOWN_FORCE_FULL;
+}
+
+inline void forceFullRefresh(int& pagesUntilRefreshAction) {
+  pagesUntilRefreshAction = CrossPointSettings::REFRESH_COUNTDOWN_FORCE_FULL;
+}
+
+inline void countOrdinaryRefresh(int& pagesUntilRefreshAction) {
+  if (pagesUntilRefreshAction != CrossPointSettings::REFRESH_COUNTDOWN_DISABLED) {
+    pagesUntilRefreshAction--;
+  }
+}
+
+inline void rememberRefreshCycle(const int pagesUntilRefreshAction) {
+  APP_STATE.readerPagesUntilFullRefresh =
+      pagesUntilRefreshAction == CrossPointSettings::REFRESH_COUNTDOWN_DISABLED
+          ? UINT8_MAX
+          : static_cast<uint8_t>(pagesUntilRefreshAction);
+}
+
+inline void displayWithRefreshCycle(const GfxRenderer& renderer, int& pagesUntilRefreshAction,
+                                    const bool isBlackAndWhitePage = true) {
+  if (isRefreshActionDue(pagesUntilRefreshAction)) {
+    const bool useNoFlashMaintenance =
+        gpio.deviceIsX3() && isBlackAndWhitePage && !isFullRefreshForced(pagesUntilRefreshAction) &&
+        SETTINGS.refreshAction == CrossPointSettings::REFRESH_ACTION_BW_REINFORCEMENT;
+    if (useNoFlashMaintenance) {
+      // The X3 OEM differential waveform turns the page and reinforces
+      // unchanged black and white pixels in the same update.
+      renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
+    } else {
+      renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    }
+    pagesUntilRefreshAction = SETTINGS.getRefreshFrequency();
   } else {
     renderer.displayBuffer();
-    pagesUntilFullRefresh--;
+    countOrdinaryRefresh(pagesUntilRefreshAction);
   }
-  APP_STATE.readerPagesUntilFullRefresh = static_cast<uint8_t>(pagesUntilFullRefresh);
+  rememberRefreshCycle(pagesUntilRefreshAction);
 }
 
 inline void restoreRefreshCycleAfterQuickResume(int& pagesUntilFullRefresh) {
@@ -76,7 +112,14 @@ inline void restoreRefreshCycleAfterQuickResume(int& pagesUntilFullRefresh) {
     return;
   }
 
-  pagesUntilFullRefresh = APP_STATE.readerPagesUntilFullRefresh;
+  const int configuredFrequency = SETTINGS.getRefreshFrequency();
+  if (configuredFrequency == CrossPointSettings::REFRESH_COUNTDOWN_DISABLED) {
+    pagesUntilFullRefresh = configuredFrequency;
+  } else if (APP_STATE.readerPagesUntilFullRefresh == UINT8_MAX) {
+    pagesUntilFullRefresh = configuredFrequency;
+  } else {
+    pagesUntilFullRefresh = APP_STATE.readerPagesUntilFullRefresh;
+  }
   APP_STATE.restoreReaderRefreshCycle = false;
   APP_STATE.saveToFile();
 }

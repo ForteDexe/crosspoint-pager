@@ -133,7 +133,15 @@ class CrossPointSettings {
     REFRESH_10 = 2,
     REFRESH_15 = 3,
     REFRESH_30 = 4,
+    REFRESH_60 = 5,
+    REFRESH_NEVER = 6,
     REFRESH_FREQUENCY_COUNT
+  };
+
+  enum REFRESH_ACTION {
+    REFRESH_ACTION_FULL = 0,
+    REFRESH_ACTION_BW_REINFORCEMENT = 1,
+    REFRESH_ACTION_COUNT
   };
 
   // Short power button press actions
@@ -241,6 +249,8 @@ class CrossPointSettings {
   uint8_t sleepTimeoutMinutes = 10;
   // E-ink refresh frequency (default 15 pages)
   uint8_t refreshFrequency = REFRESH_15;
+  // Periodic reader maintenance action. Required cleanup remains a full refresh.
+  uint8_t refreshAction = REFRESH_ACTION_FULL;
   uint8_t hyphenationEnabled = 0;
 
   // Reader screen margin settings
@@ -325,6 +335,8 @@ class CrossPointSettings {
   bool migrateLanguageBinaryFile();
 
  public:
+  static constexpr int REFRESH_COUNTDOWN_DISABLED = -1;
+  static constexpr int REFRESH_COUNTDOWN_FORCE_FULL = 0;
   float getReaderLineCompression() const;
   unsigned long getSleepTimeoutMs() const;
   int getRefreshFrequency() const;

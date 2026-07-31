@@ -16,7 +16,8 @@ experiment, not an upstream CrossPoint feature.
 - The display is refreshed only when the received payload differs from the
   previous one. Changed pager messages use a fast e-ink refresh; the cleanup
   refresh follows **Settings > Display > Refresh Frequency**, matching reader
-  page turns.
+  page turns. **Never** disables periodic cleanup. The reader-only **Screen
+  Maintenance** action does not soften Pager cleanup refreshes.
 - At 25% battery or lower, Pager stops BLE, shows a low-battery sleep message,
   and enters deep sleep using the Quick Resume presentation.
 - While Pager is active, the front and side buttons are ignored. Hold the

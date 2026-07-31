@@ -800,6 +800,8 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     if (!pendingSyncSaveError) return;
     pendingSyncSaveError = false;
     GUI.drawPopup(renderer, tr(STR_SAVE_PROGRESS_FAILED));
+    ReaderUtils::forceFullRefresh(pagesUntilFullRefresh);
+    ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
   };
 
   // edge case handling for sub-zero spine index
@@ -856,6 +858,8 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       LOG_DBG("ERS", "Cache not found, building...");
 
       GUI.drawPopup(renderer, tr(STR_INDEXING));
+      ReaderUtils::forceFullRefresh(pagesUntilFullRefresh);
+      ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
 
       const auto popupFn = [this]() { GUI.drawPopup(renderer, tr(STR_INDEXING)); };
 
@@ -977,6 +981,8 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 
   if (showBookmarkMessage) {
     GUI.drawPopup(renderer, bookmarkRemoved ? tr(STR_BOOKMARK_REMOVED) : tr(STR_BOOKMARK_ADDED));
+    ReaderUtils::forceFullRefresh(pagesUntilFullRefresh);
+    ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
   }
 }
 
@@ -1067,10 +1073,10 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     // text there ghosts gray (#2190). Force the next ordinary page onto the
     // HALF ghost-cleanup path, which drives every pixel to its target
     // regardless of residue.
-    pagesUntilFullRefresh = 1;
-    APP_STATE.readerPagesUntilFullRefresh = static_cast<uint8_t>(pagesUntilFullRefresh);
+    ReaderUtils::forceFullRefresh(pagesUntilFullRefresh);
+    ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
   } else {
-    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, !needsAnyGrayscale);
   }
   const auto tDisplay = millis();
 

@@ -329,7 +329,7 @@ unsigned long CrossPointSettings::getSleepTimeoutMs() const {
 }
 
 int CrossPointSettings::getRefreshFrequency() const {
-  switch (refreshFrequency) {
+  switch (static_cast<REFRESH_FREQUENCY>(refreshFrequency)) {
     case REFRESH_1:
       return 1;
     case REFRESH_5:
@@ -337,11 +337,18 @@ int CrossPointSettings::getRefreshFrequency() const {
     case REFRESH_10:
       return 10;
     case REFRESH_15:
-    default:
       return 15;
     case REFRESH_30:
       return 30;
+    case REFRESH_60:
+      return 60;
+    case REFRESH_NEVER:
+      return REFRESH_COUNTDOWN_DISABLED;
+    case REFRESH_FREQUENCY_COUNT:
+      break;
   }
+
+  return 15;
 }
 
 int CrossPointSettings::getReaderFontId() const {

@@ -145,6 +145,8 @@ void TxtReaderActivity::buildPageIndex() {
   LOG_DBG("TRS", "Building page index for %zu bytes...", fileSize);
 
   GUI.drawPopup(renderer, tr(STR_INDEXING));
+  ReaderUtils::forceFullRefresh(pagesUntilFullRefresh);
+  ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
 
   while (offset < fileSize) {
     std::vector<std::string> tempLines;
@@ -406,7 +408,7 @@ void TxtReaderActivity::renderPage() {
   renderLines();
   renderStatusBar();
 
-  ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+  ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, !SETTINGS.textAntiAliasing);
 
   if (SETTINGS.textAntiAliasing) {
     ReaderUtils::renderAntiAliased(renderer, [&renderLines]() { renderLines(); });
