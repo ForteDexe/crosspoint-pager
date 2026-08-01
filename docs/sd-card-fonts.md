@@ -59,6 +59,55 @@ The current list of pre-built fonts is maintained in the
 
 ## Converting Custom Fonts
 
+### Windows guided builder
+
+On Windows, double-click `scripts\build-custom-font.bat` and select a folder
+containing one font family. The builder derives the family name from
+`Family-Regular.ttf` or `.otf`, then automatically detects matching `Bold`,
+`Italic`/`Oblique`, and `BoldItalic` files. Missing optional styles are skipped.
+For example:
+
+```text
+MyFont-Regular.ttf
+MyFont-Bold.ttf
+MyFont-Italic.otf
+MyFont-BoldItalic.otf
+```
+
+Keep different font families in separate folders. After detection, the builder
+shows every selected style and lets you override the output family name. It
+then generates the 12, 14, 16, and 18 pt files by default.
+
+The first run creates a repo-local `.conda-fontconvert` environment and installs
+the converter requirements. Guided builds default to:
+
+- `reading,builtin,latin-ext,vietnamese,symbols` Unicode coverage, matching
+  the web builder defaults for Reading, Default (CrossPoint), Latin Extended,
+  Vietnamese, and Symbols & Arrows
+- FreeType forced autohinting for more consistent stems at small sizes
+- the bundled Noto Sans styles as fallback coverage for missing glyphs
+- output under `%USERPROFILE%\Downloads\CrossPointFonts\<FamilyName>\`
+
+Use family names containing only letters, numbers, hyphens, and underscores so
+the generated folder and filenames are accepted by the reader.
+
+The BAT also forwards command-line arguments directly to
+`fontconvert_sdcard.py`. This is useful for repeatable or customized builds:
+
+```powershell
+.\scripts\build-custom-font.bat `
+  --regular "C:\Fonts\MyFont-Regular.ttf" `
+  --bold "C:\Fonts\MyFont-Bold.ttf" `
+  --intervals reading `
+  --sizes 12,14,16,18 `
+  --name MyFontHinted `
+  --force-autohint `
+  --output-dir "C:\Fonts\converted\MyFontHinted"
+```
+
+Command-line mode is intentionally pass-through: add fallback options yourself
+when needed. Run the BAT without arguments to get the guided defaults above.
+
 To convert your own TrueType/OpenType fonts:
 
 ### Prerequisites

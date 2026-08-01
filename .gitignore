@@ -19,6 +19,7 @@ build
 .history/
 /.venv
 /.conda
+/.conda-fontconvert
 *.local*
 *.cpfont
 lib/EpdFont/scripts/downloaded_fonts/
