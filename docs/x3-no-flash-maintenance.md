@@ -14,6 +14,9 @@ No-flash maintenance is opt-in. On X3, set:
 1. **Settings > Reader > Text Anti-Aliasing > Off**.
 2. **Settings > Display > Screen Maintenance > No Flash (X3)**.
 3. **Settings > Display > Refresh Frequency** to the desired interval.
+4. Optionally set **Settings > Display > Extra No-Flash Passes (X3)** to **1**
+   or **2** for additional same-frame settling passes on each scheduled
+   no-flash maintenance turn. **Never** keeps the original single-pass behavior.
 
 Text anti-aliasing must be off because anti-aliased text contains grayscale
 pixels. Grayscale pages deliberately use the full-refresh cleanup path. The
@@ -22,7 +25,9 @@ periodic maintenance.
 
 For the least ghosting, use **1 page**. **5 pages** is a practical starting
 point when a small amount of residue is acceptable. A manual full refresh can
-still be used whenever the remaining ghosting becomes distracting.
+still be used whenever the remaining ghosting becomes distracting. Start with
+one extra no-flash pass; two takes longer and should be used only when the
+additional settling is visibly worthwhile on the panel.
 
 ## Verify it
 

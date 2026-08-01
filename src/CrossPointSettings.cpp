@@ -351,6 +351,21 @@ int CrossPointSettings::getRefreshFrequency() const {
   return 15;
 }
 
+uint8_t CrossPointSettings::getExtraReinforcementPasses() const {
+  switch (static_cast<EXTRA_REINFORCEMENT_PASSES>(extraReinforcementPasses)) {
+    case EXTRA_REINFORCEMENT_NEVER:
+      return 0;
+    case EXTRA_REINFORCEMENT_ONCE:
+      return 1;
+    case EXTRA_REINFORCEMENT_TWICE:
+      return 2;
+    case EXTRA_REINFORCEMENT_PASSES_COUNT:
+      break;
+  }
+
+  return 0;
+}
+
 int CrossPointSettings::getReaderFontId() const {
   // Check SD card font first
   if (sdFontFamilyName[0] != '\0' && sdFontIdResolver) {
