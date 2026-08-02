@@ -125,7 +125,7 @@ and collecting relevant build, heap, or current-draw evidence.
 
 ## Git workflow
 
-This checkout uses `origin` for `ForteDexe/crosspoint-reader` and `upstream` for
+This checkout uses `origin` for `ForteDexe/crosspoint-pager` and `upstream` for
 `crosspoint-reader/crosspoint-reader`. `ble-pager` is the fork's default branch,
 daily development line, and only product line. `upstream/master` is the stable
 upstream release source. Upstream's remote HEAD points to the faster-moving
