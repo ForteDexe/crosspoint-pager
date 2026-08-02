@@ -136,10 +136,6 @@ class GfxRenderer {
   int getScreenHeight() const;
   void displayBuffer(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
   void displayBufferAndPowerOff(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
-#if defined(PAGER_POWER_BUILD)
-  void displayGrayscaleBaseAndPowerOff(
-      HalDisplay::RefreshMode fallback = HalDisplay::HALF_REFRESH) const;
-#endif
   // EXPERIMENTAL: Windowed update - display only a rectangular region
   // void displayWindow(int x, int y, int width, int height) const;
   void invertScreen() const;

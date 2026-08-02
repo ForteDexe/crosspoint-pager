@@ -135,7 +135,10 @@ void SleepActivity::onEnter() {
                                                                          : HalBlePager::MailboxStart::OpenWindow;
     startPagerBle(mailboxStart);
 #if defined(PAGER_POWER_BUILD)
-    renderPagerSleepScreen(pagerRefreshMode, true);
+    // Match the reader's established clean transition when the first X3 Pager
+    // paint replaces a retained reader frame.
+    const auto entryRefreshMode = gpio.deviceIsX3() ? HalDisplay::HALF_REFRESH : pagerRefreshMode;
+    renderPagerSleepScreen(entryRefreshMode);
 #else
     renderPagerSleepScreen(pagerRefreshMode);
 #endif
@@ -728,12 +731,7 @@ int SleepActivity::drawPagerWrappedText(const char* text, const int fontId, cons
   return y;
 }
 
-#if defined(PAGER_POWER_BUILD)
-void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refreshMode,
-                                           const bool entryTransition) const {
-#else
 void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refreshMode) const {
-#endif
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
   const auto& metrics = UITheme::getInstance().getMetrics();
@@ -825,21 +823,10 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
         break;
     }
   }
-#if defined(PAGER_POWER_BUILD)
-  // The first X3 paint replaces arbitrary reader content. Use the same
-  // differential base transition as Quick Resume so the controller's old-image
-  // RAM is synchronized before Pager starts its normal powered-off cadence.
-  if (entryTransition && gpio.deviceIsX3()) {
-    renderer.displayGrayscaleBaseAndPowerOff(refreshMode);
-  } else {
-#endif
-    // E-ink retains the image without power. Match the reader's deep-sleep
-    // cleanup by shutting down the controller analog rails after every Pager
-    // paint; the next update powers it back up while preserving fast refresh.
-    renderer.displayBufferAndPowerOff(refreshMode);
-#if defined(PAGER_POWER_BUILD)
-  }
-#endif
+  // E-ink retains the image without power. Match the reader's deep-sleep
+  // cleanup by shutting down the controller analog rails after every Pager
+  // paint; the next update powers it back up while preserving fast refresh.
+  renderer.displayBufferAndPowerOff(refreshMode);
 }
 
 void SleepActivity::renderCustomSleepScreen() const {
@@ -1115,17 +1102,7 @@ void SleepActivity::renderCoverSleepScreen() const {
 void SleepActivity::renderLastScreenSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
   renderer.drawImage(MoonIcon, 0, pageHeight - MOONICON_HEIGHT, MOONICON_WIDTH, MOONICON_HEIGHT);
-#if defined(PAGER_POWER_BUILD)
-  if (gpio.deviceIsX3()) {
-    // The controller still holds the displayed page, so synchronize its
-    // differential base while adding the moon without a full-screen flash.
-    renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
-  } else {
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-  }
-#else
-  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
-#endif
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
 
 void SleepActivity::renderPagerLowBatterySleepScreen() const {
