@@ -134,14 +134,7 @@ void SleepActivity::onEnter() {
     const auto mailboxStart = pagerMailboxMode && halClock.isAvailable() ? HalBlePager::MailboxStart::WaitForInterval
                                                                          : HalBlePager::MailboxStart::OpenWindow;
     startPagerBle(mailboxStart);
-#if defined(PAGER_POWER_BUILD)
-    // Match the reader's established clean transition when the first X3 Pager
-    // paint replaces a retained reader frame.
-    const auto entryRefreshMode = gpio.deviceIsX3() ? HalDisplay::HALF_REFRESH : pagerRefreshMode;
-    renderPagerSleepScreen(entryRefreshMode);
-#else
     renderPagerSleepScreen(pagerRefreshMode);
-#endif
     return;
   }
 
@@ -1102,7 +1095,7 @@ void SleepActivity::renderCoverSleepScreen() const {
 void SleepActivity::renderLastScreenSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
   renderer.drawImage(MoonIcon, 0, pageHeight - MOONICON_HEIGHT, MOONICON_WIDTH, MOONICON_HEIGHT);
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
 
 void SleepActivity::renderPagerLowBatterySleepScreen() const {
