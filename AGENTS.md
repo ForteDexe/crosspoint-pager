@@ -65,23 +65,26 @@ control-flow, and review skills when their descriptions match the task.
 
 ## Build and verification
 
-Use the committed project-local environment:
+`pager_power` is this fork's sole daily product firmware. Use the committed
+project-local environment:
 
 ```powershell
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
-.\.conda\Scripts\pio.exe run -e default
+.\.conda\Scripts\pio.exe run -e pager_power
 ```
 
 The UTF-8 variables avoid PlatformIO output failures on Windows consoles using
-CP1252. For C/C++ changes, build before handoff; run `pio check -e default`
-when the change warrants static analysis. Report that device, battery, BLE, and
-all-orientation testing still require hardware unless actually performed.
+CP1252. For C/C++ changes, build `pager_power` before handoff; run
+`pio check -e pager_power` when the change warrants static analysis. Report
+that device, battery, BLE, and all-orientation testing still require hardware
+unless actually performed. Use `pager_power_debug` only when serial diagnostics
+are explicitly required.
 
-The `default` command above is the reader-only baseline verification target.
-When the connected X3 must retain production BLE Pager behavior, build and
-flash `pager_power`, including for changes made in shared reader code. Use
-`pager_power_debug` only when serial diagnostics are explicitly required.
+The `default` PlatformIO environment remains a reader-only compatibility
+target. Do not develop or flash it in parallel with the Pager product. Build it
+once while integrating an upstream release, or when the user explicitly asks
+for reader-only compatibility verification.
 Pager-specific power, sleep, wake, and display-transition workarounds must be
 guarded by `PAGER_POWER_BUILD`, which is defined only by `pager_power` and
 `pager_power_debug`. Do not change the corresponding `default` reader behavior
@@ -123,25 +126,29 @@ and collecting relevant build, heap, or current-draw evidence.
 ## Git workflow
 
 This checkout uses `origin` for `ForteDexe/crosspoint-reader` and `upstream` for
-`crosspoint-reader/crosspoint-reader`. `feature/ble-pager` is the active Pager
-line and is intended to be this fork's default branch. `upstream/feat-bluetooth`
+`crosspoint-reader/crosspoint-reader`. `ble-pager` is the fork's default branch,
+daily development line, and only product line. `upstream/master` is the stable
+upstream release source. Upstream's remote HEAD points to the faster-moving
+`develop` branch, so never merge `upstream/HEAD` or `upstream/develop` unless the
+user explicitly requests a develop-preview integration. `upstream/feat-bluetooth`
 is a BLE HID reference only; never merge it into Pager. Check `git status
---short`, the current branch, and remotes before Git operations. Fetch upstream
-before starting a substantial feature, preserve unrelated user changes, and
-push only when requested.
+--short`, the current branch, and remotes before Git operations. Preserve
+unrelated user changes and push only when requested.
 
 ## Upstream-sync guard
 
-Never merge or rebase `upstream/master` directly into the published Pager line.
+Never merge or rebase an upstream ref directly into the published `ble-pager`
+line.
 Upstream deliberately does not share this fork's BLE Pager scope, so a routine
 update can silently remove Pager behavior or reintroduce incompatible power
 management.
 
 For every upstream update:
 
-1. Fetch `upstream`, then create a disposable branch such as
-   `sync/upstream-YYYY-MM-DD` from `feature/ble-pager`.
-2. Merge `upstream/master` into that branch and resolve conflicts there. Do not
+1. Wait for an upstream release, fetch `upstream` and its tags, then identify
+   the exact release tag. Do not treat a moving branch head as a release.
+2. Create a disposable branch such as `sync/upstream-vX.Y.Z` from `ble-pager`,
+   then merge the exact upstream release tag into that branch. Do not
    force-push, reset, or rewrite the published Pager branch.
 3. Explicitly review these Pager-owned surfaces before proposing the merge:
    `lib/hal/HalBlePager.*`, `lib/hal/HalPowerManager.*`,
@@ -152,13 +159,14 @@ For every upstream update:
    sleep and Pager-specific power/display transition behavior must remain
    isolated to `pager_power` behind `PAGER_POWER_BUILD`; do not carry its SDK
    config or workarounds into the default environment.
-5. Build both `default` and `pager_power`. For changes touching Pager, also
-   perform X3 smoke tests: BLE discovery after the power button is released,
-   browser message delivery, power-button exit/reader return, and low-battery
-   behavior where practical.
-6. Present the integration diff and verification results to the user. Merge it
-   into `feature/ble-pager` only after review/approval, then keep the sync
-   branch until the remote update is confirmed.
+5. Build `pager_power` as the product verification, then build `default` once
+   as an upstream reader-compatibility check. Also perform X3 smoke tests: BLE
+   discovery after the power button is released, browser message delivery,
+   power-button exit/reader return, and low-battery behavior where practical.
+6. Present the integration diff and verification results to the user. After
+   review and approval, fast-forward `ble-pager` to the tested sync branch and
+   tag the integrated result with both Pager and upstream release identities.
+   Keep the sync branch until the remote update and tag are confirmed.
 
 Use focused commits with a conventional prefix (`feat:`, `fix:`, `refactor:`,
 `docs:`, `test:`, `chore:`, or `perf:`). Keep refactors separate from behavior
