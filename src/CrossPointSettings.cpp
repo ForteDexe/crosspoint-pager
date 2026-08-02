@@ -351,19 +351,15 @@ int CrossPointSettings::getRefreshFrequency() const {
   return 15;
 }
 
-uint8_t CrossPointSettings::getExtraReinforcementPasses() const {
-  switch (static_cast<EXTRA_REINFORCEMENT_PASSES>(extraReinforcementPasses)) {
-    case EXTRA_REINFORCEMENT_NEVER:
-      return 0;
-    case EXTRA_REINFORCEMENT_ONCE:
-      return 1;
-    case EXTRA_REINFORCEMENT_TWICE:
-      return 2;
-    case EXTRA_REINFORCEMENT_PASSES_COUNT:
-      break;
+bool CrossPointSettings::applyRefreshActionConstraints() {
+  if (refreshAction != REFRESH_ACTION_BW_REINFORCEMENT) {
+    return false;
   }
 
-  return 0;
+  const bool changed = refreshFrequency != REFRESH_1 || textAntiAliasing != 0;
+  refreshFrequency = REFRESH_1;
+  textAntiAliasing = 0;
+  return changed;
 }
 
 int CrossPointSettings::getReaderFontId() const {

@@ -237,6 +237,13 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
     }
   }
 
+  if (s.applyRefreshActionConstraints() && needsResave) {
+    *needsResave = true;
+  }
+  if (!doc["extraReinforcementPasses"].isNull() && needsResave) {
+    *needsResave = true;
+  }
+
   if (doc["sleepTimeoutMinutes"].isNull() && !doc["sleepTimeout"].isNull()) {
     const uint8_t legacyValue =
         clamp(doc["sleepTimeout"] | (uint8_t)CrossPointSettings::SLEEP_10_MIN, CrossPointSettings::SLEEP_TIMEOUT_COUNT,

@@ -99,8 +99,8 @@ inline void displayWithRefreshCycle(const GfxRenderer& renderer, int& pagesUntil
       // The first pass leaves DTM1 and DTM2 holding the displayed BW frame.
       // Repeating the same bank in that equal-plane state fires only its
       // gentle unchanged-white and unchanged-black settling cells.
-      const uint8_t extraPasses = SETTINGS.getExtraReinforcementPasses();
-      for (uint8_t pass = 0; pass < extraPasses; pass++) {
+      static constexpr uint8_t X3_NO_FLASH_EXTRA_PASSES = 2;
+      for (uint8_t pass = 0; pass < X3_NO_FLASH_EXTRA_PASSES; pass++) {
         renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
       }
     } else {

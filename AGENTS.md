@@ -78,6 +78,15 @@ CP1252. For C/C++ changes, build before handoff; run `pio check -e default`
 when the change warrants static analysis. Report that device, battery, BLE, and
 all-orientation testing still require hardware unless actually performed.
 
+The `default` command above is the reader-only baseline verification target.
+When the connected X3 must retain production BLE Pager behavior, build and
+flash `pager_power`, including for changes made in shared reader code. Use
+`pager_power_debug` only when serial diagnostics are explicitly required.
+
+For the standard Windows X3 port-detection, build, upload, success markers, and
+interrupted-toolchain recovery procedure, follow
+[`docs/contributing/testing-debugging.md`](docs/contributing/testing-debugging.md#windows-x3-build-and-flash).
+
 For persistent USB serial captures, including the `pager_power_debug`
 build/flash workflow and PlatformIO's `log2file` filter, follow
 `docs/contributing/testing-debugging.md`. The Pager-specific connection guide at

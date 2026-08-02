@@ -90,6 +90,15 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
   return s;
 }
 
+inline bool isSettingVisible(const SettingInfo& setting) {
+  if (SETTINGS.refreshAction != CrossPointSettings::REFRESH_ACTION_BW_REINFORCEMENT) {
+    return true;
+  }
+
+  return setting.valuePtr != &CrossPointSettings::refreshFrequency &&
+         setting.valuePtr != &CrossPointSettings::textAntiAliasing;
+}
+
 // Shared settings list used by both the device settings UI and the web settings API.
 // Each entry has a key (for JSON API) and category (for grouping).
 // ACTION-type entries and entries without a key are device-only.
@@ -126,10 +135,6 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Enum(StrId::STR_REFRESH_ACTION, &CrossPointSettings::refreshAction,
                           {StrId::STR_REFRESH_ACTION_FULL, StrId::STR_REFRESH_ACTION_BW_REINFORCEMENT},
                           "refreshAction", StrId::STR_CAT_DISPLAY),
-        SettingInfo::Enum(StrId::STR_EXTRA_REINFORCEMENT, &CrossPointSettings::extraReinforcementPasses,
-                          {StrId::STR_NEVER, StrId::STR_EXTRA_REINFORCEMENT_1,
-                           StrId::STR_EXTRA_REINFORCEMENT_2},
-                          "extraReinforcementPasses", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_UI_THEME, &CrossPointSettings::uiTheme,
                           {StrId::STR_THEME_CLASSIC, StrId::STR_THEME_LYRA, StrId::STR_THEME_LYRA_EXTENDED,
                            StrId::STR_THEME_ROUNDEDRAFF},

@@ -1118,6 +1118,7 @@ void CrossPointWebServer::handleGetSettings() const {
   JsonDocument doc;
 
   for (const auto& s : settings) {
+    if (!isSettingVisible(s)) continue;
     if (!s.key) continue;  // Skip ACTION-only entries
 
     doc.clear();
@@ -1265,6 +1266,7 @@ void CrossPointWebServer::handlePostSettings() {
     }
   }
 
+  SETTINGS.applyRefreshActionConstraints();
   SETTINGS.saveToFile();
 
   LOG_DBG("WEB", "Applied %d setting(s)", applied);

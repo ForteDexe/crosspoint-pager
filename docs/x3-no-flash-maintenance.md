@@ -9,30 +9,24 @@ full refresh and is intended to reduce residue, not remove every trace of it.
 
 ## Configure it
 
-No-flash maintenance is opt-in. On X3, set:
+No-flash maintenance is opt-in. On X3, select
+**Settings > Display > Screen Maintenance > No Flash (X3)**.
 
-1. **Settings > Reader > Text Anti-Aliasing > Off**.
-2. **Settings > Display > Screen Maintenance > No Flash (X3)**.
-3. **Settings > Display > Refresh Frequency** to the desired interval.
-4. Optionally set **Settings > Display > Extra No-Flash Passes (X3)** to **1**
-   or **2** for additional same-frame settling passes on each scheduled
-   no-flash maintenance turn. **Never** keeps the original single-pass behavior.
+Selecting this mode automatically sets **Refresh Frequency** to **1 page** and
+**Text Anti-Aliasing** to **Off**, then hides both settings while the mode is
+active. It also uses two fixed extra same-frame reinforcement passes after each
+eligible page turn. This keeps the tested X3 configuration together as one
+setting.
 
 Text anti-aliasing must be off because anti-aliased text contains grayscale
-pixels. Grayscale pages deliberately use the full-refresh cleanup path. The
-available intervals are 1, 5, 10, 15, 30, or 60 pages; **Never** disables
-periodic maintenance.
-
-For the least ghosting, use **1 page**. **5 pages** is a practical starting
-point when a small amount of residue is acceptable. A manual full refresh can
-still be used whenever the remaining ghosting becomes distracting. Start with
-one extra no-flash pass; two takes longer and should be used only when the
-additional settling is visibly worthwhile on the panel.
+pixels. Grayscale pages deliberately use the full-refresh cleanup path. A
+manual full refresh can still be used whenever the remaining ghosting becomes
+distracting. Switching **Screen Maintenance** back to **Full Refresh** makes
+the frequency and anti-aliasing controls visible again.
 
 ## Verify it
 
-1. Select **No Flash (X3)**, set **Refresh Frequency** to **1 page**, and turn
-   text anti-aliasing off.
+1. Select **No Flash (X3)**.
 2. Open an already-indexed, text-only EPUB or TXT file with no images.
 3. Turn forward through several pages. Opening the book or drawing its first
    page may still use a full refresh; eligible page turns after that should be
@@ -41,7 +35,6 @@ additional settling is visibly worthwhile on the panel.
    page turns. At the one-page interval, the cleanup flash should now be
    obvious. This A/B comparison is the simplest confirmation that no-flash
    maintenance is active.
-5. Restore the preferred refresh interval after testing.
 
 ## When a full refresh is still expected
 

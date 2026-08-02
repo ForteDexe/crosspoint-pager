@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
@@ -41,6 +42,7 @@ void SettingsActivity::rebuildSettingsLists() {
   sdFontSystem.refreshIfDirty();
 
   for (auto& setting : getSettingsList(&sdFontSystem.registry())) {
+    if (!isSettingVisible(setting)) continue;
     if (setting.category == StrId::STR_NONE_OPT) continue;
     if (setting.category == StrId::STR_CAT_DISPLAY) {
       displaySettings.push_back(setting);
@@ -191,6 +193,7 @@ void SettingsActivity::toggleCurrentSetting() {
   }
 
   const auto& setting = (*currentSettings)[selectedSetting];
+  const StrId selectedSettingName = setting.nameId;
   const bool sleepScreenChanged = setting.valuePtr == &CrossPointSettings::sleepScreen;
   const bool quickResumeTimeoutChanged = setting.valuePtr == &CrossPointSettings::quickResumeSleepScreen;
 
@@ -279,9 +282,16 @@ void SettingsActivity::toggleCurrentSetting() {
   }
 
   syncQuickResumeTimeoutForSleepScreen(sleepScreenChanged, quickResumeTimeoutChanged);
+  SETTINGS.applyRefreshActionConstraints();
   SETTINGS.saveToFile();
   rebuildSettingsLists();
-  selectedSettingIndex = std::min(selectedSettingIndex, settingsCount);
+  const auto selectedSettingIt =
+      std::find_if(currentSettings->begin(), currentSettings->end(), [selectedSettingName](const SettingInfo& info) {
+        return info.nameId == selectedSettingName;
+      });
+  selectedSettingIndex = selectedSettingIt == currentSettings->end()
+                             ? std::min(selectedSettingIndex, settingsCount)
+                             : static_cast<int>(std::distance(currentSettings->begin(), selectedSettingIt)) + 1;
 }
 
 void SettingsActivity::syncQuickResumeTimeoutForSleepScreen(bool sleepScreenChanged, bool quickResumeTimeoutChanged) {

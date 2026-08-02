@@ -144,13 +144,6 @@ class CrossPointSettings {
     REFRESH_ACTION_COUNT
   };
 
-  enum EXTRA_REINFORCEMENT_PASSES {
-    EXTRA_REINFORCEMENT_NEVER = 0,
-    EXTRA_REINFORCEMENT_ONCE = 1,
-    EXTRA_REINFORCEMENT_TWICE = 2,
-    EXTRA_REINFORCEMENT_PASSES_COUNT
-  };
-
   // Short power button press actions
   enum SHORT_PWRBTN { IGNORE = 0, SLEEP = 1, PAGE_TURN = 2, FORCE_REFRESH = 3, FOOTNOTES = 4, SHORT_PWRBTN_COUNT };
 
@@ -258,8 +251,6 @@ class CrossPointSettings {
   uint8_t refreshFrequency = REFRESH_15;
   // Periodic reader maintenance action. Required cleanup remains a full refresh.
   uint8_t refreshAction = REFRESH_ACTION_FULL;
-  // Additional same-frame X3 reinforcement passes after no-flash maintenance.
-  uint8_t extraReinforcementPasses = EXTRA_REINFORCEMENT_NEVER;
   uint8_t hyphenationEnabled = 0;
 
   // Reader screen margin settings
@@ -349,7 +340,7 @@ class CrossPointSettings {
   float getReaderLineCompression() const;
   unsigned long getSleepTimeoutMs() const;
   int getRefreshFrequency() const;
-  uint8_t getExtraReinforcementPasses() const;
+  bool applyRefreshActionConstraints();
 };
 
 // Helper macro to access settings
