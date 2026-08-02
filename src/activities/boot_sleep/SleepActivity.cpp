@@ -5,7 +5,9 @@
 #include <GfxRenderer.h>
 #include <HalBlePager.h>
 #include <HalClock.h>
+#if defined(PAGER_POWER_BUILD)
 #include <HalGPIO.h>
+#endif
 #include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -132,7 +134,11 @@ void SleepActivity::onEnter() {
     const auto mailboxStart = pagerMailboxMode && halClock.isAvailable() ? HalBlePager::MailboxStart::WaitForInterval
                                                                          : HalBlePager::MailboxStart::OpenWindow;
     startPagerBle(mailboxStart);
+#if defined(PAGER_POWER_BUILD)
     renderPagerSleepScreen(pagerRefreshMode, true);
+#else
+    renderPagerSleepScreen(pagerRefreshMode);
+#endif
     return;
   }
 
@@ -722,8 +728,12 @@ int SleepActivity::drawPagerWrappedText(const char* text, const int fontId, cons
   return y;
 }
 
+#if defined(PAGER_POWER_BUILD)
 void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refreshMode,
                                            const bool entryTransition) const {
+#else
+void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refreshMode) const {
+#endif
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
   const auto& metrics = UITheme::getInstance().getMetrics();
@@ -815,17 +825,21 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
         break;
     }
   }
+#if defined(PAGER_POWER_BUILD)
   // The first X3 paint replaces arbitrary reader content. Use the same
   // differential base transition as Quick Resume so the controller's old-image
   // RAM is synchronized before Pager starts its normal powered-off cadence.
   if (entryTransition && gpio.deviceIsX3()) {
     renderer.displayGrayscaleBaseAndPowerOff(refreshMode);
   } else {
+#endif
     // E-ink retains the image without power. Match the reader's deep-sleep
     // cleanup by shutting down the controller analog rails after every Pager
     // paint; the next update powers it back up while preserving fast refresh.
     renderer.displayBufferAndPowerOff(refreshMode);
+#if defined(PAGER_POWER_BUILD)
   }
+#endif
 }
 
 void SleepActivity::renderCustomSleepScreen() const {
@@ -1101,6 +1115,7 @@ void SleepActivity::renderCoverSleepScreen() const {
 void SleepActivity::renderLastScreenSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
   renderer.drawImage(MoonIcon, 0, pageHeight - MOONICON_HEIGHT, MOONICON_WIDTH, MOONICON_HEIGHT);
+#if defined(PAGER_POWER_BUILD)
   if (gpio.deviceIsX3()) {
     // The controller still holds the displayed page, so synchronize its
     // differential base while adding the moon without a full-screen flash.
@@ -1108,6 +1123,9 @@ void SleepActivity::renderLastScreenSleepScreen() const {
   } else {
     renderer.displayBuffer(HalDisplay::HALF_REFRESH);
   }
+#else
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+#endif
 }
 
 void SleepActivity::renderPagerLowBatterySleepScreen() const {

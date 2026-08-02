@@ -52,7 +52,11 @@ class SleepActivity final : public Activity {
   void finishPagerBatch();
   void requestPagerRingRender();
   HalDisplay::RefreshMode nextPagerRefreshMode();
+#if defined(PAGER_POWER_BUILD)
   void renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode, bool entryTransition = false) const;
+#else
+  void renderPagerSleepScreen(HalDisplay::RefreshMode refreshMode) const;
+#endif
   void updatePagerMessage(char* payload, size_t length);
   void copyPagerEllipsizedText(const char* source, char* destination, size_t destinationSize, int fontId,
                                int maxWidth, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;

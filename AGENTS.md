@@ -82,6 +82,10 @@ The `default` command above is the reader-only baseline verification target.
 When the connected X3 must retain production BLE Pager behavior, build and
 flash `pager_power`, including for changes made in shared reader code. Use
 `pager_power_debug` only when serial diagnostics are explicitly required.
+Pager-specific power, sleep, wake, and display-transition workarounds must be
+guarded by `PAGER_POWER_BUILD`, which is defined only by `pager_power` and
+`pager_power_debug`. Do not change the corresponding `default` reader behavior
+unless the user explicitly requests a shared reader fix.
 
 For the standard Windows X3 port-detection, build, upload, success markers, and
 interrupted-toolchain recovery procedure, follow
@@ -145,8 +149,9 @@ For every upstream update:
    `platformio.ini`, `sdkconfig.pager-power`, Pager translations, and
    `docs/ble-pager*.md`.
 4. Preserve the normal `default` firmware as reader-only. Pager modem/light
-   sleep must remain isolated to `pager_power`; do not carry its SDK config
-   into the default environment.
+   sleep and Pager-specific power/display transition behavior must remain
+   isolated to `pager_power` behind `PAGER_POWER_BUILD`; do not carry its SDK
+   config or workarounds into the default environment.
 5. Build both `default` and `pager_power`. For changes touching Pager, also
    perform X3 smoke tests: BLE discovery after the power button is released,
    browser message delivery, power-button exit/reader return, and low-battery
