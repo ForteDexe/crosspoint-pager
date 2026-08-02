@@ -1359,6 +1359,12 @@ void GfxRenderer::displayBufferAndPowerOff(const HalDisplay::RefreshMode refresh
   display.displayBuffer(refreshMode, true);
 }
 
+void GfxRenderer::displayGrayscaleBaseAndPowerOff(const HalDisplay::RefreshMode fallback) const {
+  auto elapsed = millis() - start_ms;
+  LOG_DBG("GFX", "Time = %lu ms from clearScreen to powered-off grayscale base", elapsed);
+  display.displayGrayscaleBase(fallback, true);
+}
+
 std::string GfxRenderer::truncatedText(const int fontId, const char* text, const int maxWidth,
                                        const EpdFontFamily::Style style) const {
   if (!text || maxWidth <= 0) return "";
