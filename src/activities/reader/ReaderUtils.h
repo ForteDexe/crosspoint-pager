@@ -69,8 +69,20 @@ inline bool isFullRefreshForced(const int pagesUntilRefreshAction) {
   return pagesUntilRefreshAction == CrossPointSettings::REFRESH_COUNTDOWN_FORCE_FULL;
 }
 
+inline bool isFastRefreshForced(const int pagesUntilRefreshAction) {
+  return pagesUntilRefreshAction == CrossPointSettings::REFRESH_COUNTDOWN_FORCE_FAST;
+}
+
 inline void forceFullRefresh(int& pagesUntilRefreshAction) {
   pagesUntilRefreshAction = CrossPointSettings::REFRESH_COUNTDOWN_FORCE_FULL;
+}
+
+inline bool isX3NoFlashEnabled() {
+  return gpio.deviceIsX3() && SETTINGS.refreshAction == CrossPointSettings::REFRESH_ACTION_BW_REINFORCEMENT;
+}
+
+inline bool shouldForceGrayscaleBlackWhite() {
+  return isX3NoFlashEnabled() && SETTINGS.x3ForceGrayscaleBlackWhite != 0;
 }
 
 inline void countOrdinaryRefresh(int& pagesUntilRefreshAction) {
@@ -81,28 +93,54 @@ inline void countOrdinaryRefresh(int& pagesUntilRefreshAction) {
 
 inline void rememberRefreshCycle(const int pagesUntilRefreshAction) {
   APP_STATE.readerPagesUntilFullRefresh =
-      pagesUntilRefreshAction == CrossPointSettings::REFRESH_COUNTDOWN_DISABLED
+      pagesUntilRefreshAction == CrossPointSettings::REFRESH_COUNTDOWN_DISABLED ||
+              pagesUntilRefreshAction == CrossPointSettings::REFRESH_COUNTDOWN_FORCE_FAST
           ? UINT8_MAX
           : static_cast<uint8_t>(pagesUntilRefreshAction);
 }
 
+inline void displayNoFlashQuickRefresh(const GfxRenderer& renderer) {
+  // The X3 OEM differential waveform turns the page and reinforces unchanged
+  // black and white pixels in the same update.
+  renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
+  // The first pass leaves DTM1 and DTM2 holding the displayed BW frame.
+  // Repeating the same bank in that equal-plane state fires only its gentle
+  // unchanged-white and unchanged-black settling cells.
+  static constexpr uint8_t X3_NO_FLASH_EXTRA_PASSES = 2;
+  for (uint8_t pass = 0; pass < X3_NO_FLASH_EXTRA_PASSES; pass++) {
+    renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
+  }
+}
+
+inline bool scheduleNoFlashTransitionAfterGrayscale(int& pagesUntilRefreshAction) {
+  if (!isX3NoFlashEnabled()) {
+    return false;
+  }
+
+  switch (static_cast<CrossPointSettings::X3_GRAYSCALE_REFRESH_MODE>(SETTINGS.x3GrayscaleRefreshMode)) {
+    case CrossPointSettings::X3_GRAYSCALE_REFRESH_FAST:
+      pagesUntilRefreshAction = CrossPointSettings::REFRESH_COUNTDOWN_FORCE_FAST;
+      break;
+    case CrossPointSettings::X3_GRAYSCALE_REFRESH_QUICK:
+    case CrossPointSettings::X3_GRAYSCALE_REFRESH_MODE_COUNT:
+      pagesUntilRefreshAction = 1;
+      break;
+  }
+  rememberRefreshCycle(pagesUntilRefreshAction);
+  return true;
+}
+
 inline void displayWithRefreshCycle(const GfxRenderer& renderer, int& pagesUntilRefreshAction,
                                     const bool isBlackAndWhitePage = true) {
-  if (isRefreshActionDue(pagesUntilRefreshAction)) {
+  if (isFastRefreshForced(pagesUntilRefreshAction)) {
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    pagesUntilRefreshAction = SETTINGS.getRefreshFrequency();
+  } else if (isRefreshActionDue(pagesUntilRefreshAction)) {
     const bool useNoFlashMaintenance =
         gpio.deviceIsX3() && isBlackAndWhitePage && !isFullRefreshForced(pagesUntilRefreshAction) &&
         SETTINGS.refreshAction == CrossPointSettings::REFRESH_ACTION_BW_REINFORCEMENT;
     if (useNoFlashMaintenance) {
-      // The X3 OEM differential waveform turns the page and reinforces
-      // unchanged black and white pixels in the same update.
-      renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
-      // The first pass leaves DTM1 and DTM2 holding the displayed BW frame.
-      // Repeating the same bank in that equal-plane state fires only its
-      // gentle unchanged-white and unchanged-black settling cells.
-      static constexpr uint8_t X3_NO_FLASH_EXTRA_PASSES = 2;
-      for (uint8_t pass = 0; pass < X3_NO_FLASH_EXTRA_PASSES; pass++) {
-        renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
-      }
+      displayNoFlashQuickRefresh(renderer);
     } else {
       renderer.displayBuffer(HalDisplay::HALF_REFRESH);
     }

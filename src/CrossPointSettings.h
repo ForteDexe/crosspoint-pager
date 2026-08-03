@@ -144,6 +144,12 @@ class CrossPointSettings {
     REFRESH_ACTION_COUNT
   };
 
+  enum X3_GRAYSCALE_REFRESH_MODE {
+    X3_GRAYSCALE_REFRESH_FAST = 0,
+    X3_GRAYSCALE_REFRESH_QUICK = 1,
+    X3_GRAYSCALE_REFRESH_MODE_COUNT
+  };
+
   // Short power button press actions
   enum SHORT_PWRBTN { IGNORE = 0, SLEEP = 1, PAGE_TURN = 2, FORCE_REFRESH = 3, FOOTNOTES = 4, SHORT_PWRBTN_COUNT };
 
@@ -251,6 +257,9 @@ class CrossPointSettings {
   uint8_t refreshFrequency = REFRESH_15;
   // Periodic reader maintenance action. Required cleanup remains a full refresh.
   uint8_t refreshAction = REFRESH_ACTION_FULL;
+  // X3 No Flash handling for the transition away from grayscale content.
+  uint8_t x3GrayscaleRefreshMode = X3_GRAYSCALE_REFRESH_QUICK;
+  uint8_t x3ForceGrayscaleBlackWhite = 0;
   uint8_t hyphenationEnabled = 0;
 
   // Reader screen margin settings
@@ -336,6 +345,7 @@ class CrossPointSettings {
 
  public:
   static constexpr int REFRESH_COUNTDOWN_DISABLED = -1;
+  static constexpr int REFRESH_COUNTDOWN_FORCE_FAST = -2;
   static constexpr int REFRESH_COUNTDOWN_FORCE_FULL = 0;
   float getReaderLineCompression() const;
   unsigned long getSleepTimeoutMs() const;

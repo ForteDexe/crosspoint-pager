@@ -19,9 +19,23 @@ eligible page turn. This keeps the tested X3 configuration together as one
 setting.
 
 Text anti-aliasing must be off because anti-aliased text contains grayscale
-pixels. Grayscale pages deliberately use the full-refresh cleanup path. A
-manual full refresh can still be used whenever the remaining ghosting becomes
-distracting. Switching **Screen Maintenance** back to **Full Refresh** makes
+pixels. While No Flash is selected, two additional controls are visible:
+
+- **Gray Page Refresh > Fast Refresh** uses one ordinary fast update when
+  leaving grayscale content. It is the fastest option and may leave more gray
+  residue.
+- **Gray Page Refresh > Quick Refresh** uses the X3 grayscale-aware update for
+  a gray page and the existing three-pass No Flash reinforcement when the next
+  black-and-white page is shown. It takes longer but should settle more residue
+  without a black full-refresh flash.
+- **Force Gray to Black/White** skips the grayscale overlay and displays the
+  page's black-and-white base instead. This removes gray tones and avoids the
+  grayscale transition entirely.
+
+**Quick Refresh** is the default grayscale policy; **Force Gray to
+Black/White** defaults to Off. A manual full refresh can still be used whenever
+the remaining ghosting becomes distracting. Switching **Screen Maintenance**
+back to **Full Refresh** hides the two No Flash grayscale controls and makes
 the frequency and anti-aliasing controls visible again.
 
 ## Verify it
@@ -38,7 +52,7 @@ the frequency and anti-aliasing controls visible again.
 
 ## When a full refresh is still expected
 
-The firmware keeps the conservative cleanup path for:
+The firmware keeps the conservative cleanup path outside X3 No Flash for:
 
 - pages containing images or grayscale, including anti-aliased text;
 - indexing, bookmark, error, and other popup residue;
@@ -47,6 +61,6 @@ The firmware keeps the conservative cleanup path for:
 - 2-bit grayscale XTC pages; and
 - non-X3 devices.
 
-After an image or grayscale page, the next ordinary page can also receive a
-full cleanup to remove residue left by that content. These flashes are expected
-and do not mean the no-flash setting has stopped working.
+In X3 No Flash mode, the selected **Gray Page Refresh** policy replaces the
+automatic black cleanup after EPUB images and for 2-bit grayscale XTC page
+turns. Manual refreshes and unrelated safety cleanups can still flash.

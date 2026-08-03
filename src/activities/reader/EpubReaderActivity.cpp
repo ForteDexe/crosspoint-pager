@@ -1035,8 +1035,10 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const auto tPrewarm = millis();
 
   const bool pageHasImages = page->hasImages();
-  const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
-  const bool needsAnyGrayscale = needsTextGrayscale || pageHasImages;
+  const bool forceGrayscaleBlackWhite = ReaderUtils::shouldForceGrayscaleBlackWhite();
+  const bool needsTextGrayscale = SETTINGS.textAntiAliasing && !forceGrayscaleBlackWhite;
+  const bool needsImageGrayscale = pageHasImages && !forceGrayscaleBlackWhite;
+  const bool needsAnyGrayscale = needsTextGrayscale || needsImageGrayscale;
   auto renderGrayscalePass = [&]() {
     if (needsTextGrayscale) {
       page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
@@ -1049,7 +1051,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   renderStatusBar();
   const auto tBwRender = millis();
 
-  if (pageHasImages) {
+  if (needsImageGrayscale) {
     // Double FAST_REFRESH with selective image blanking (pablohc's technique):
     // HALF_REFRESH sets particles too firmly for the grayscale LUT to adjust.
     // Instead, blank only the image area and do two fast refreshes.
@@ -1067,14 +1069,13 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     } else {
       renderer.displayBuffer(HalDisplay::HALF_REFRESH);
     }
-    // The image's own page is handled above and doesn't count toward the full
-    // refresh cadence. But the grayscale pass below leaves gray charge in the
-    // image region that a plain fast diff on the *next* page can't clear, so
-    // text there ghosts gray (#2190). Force the next ordinary page onto the
-    // HALF ghost-cleanup path, which drives every pixel to its target
-    // regardless of residue.
-    ReaderUtils::forceFullRefresh(pagesUntilFullRefresh);
-    ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
+    // Normal maintenance keeps the conservative HALF cleanup after gray. X3
+    // No Flash instead schedules the selected no-black transition for the next
+    // page so the user can compare speed against stronger reinforcement.
+    if (!ReaderUtils::scheduleNoFlashTransitionAfterGrayscale(pagesUntilFullRefresh)) {
+      ReaderUtils::forceFullRefresh(pagesUntilFullRefresh);
+      ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
+    }
   } else {
     ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, !needsAnyGrayscale);
   }

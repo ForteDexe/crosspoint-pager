@@ -210,6 +210,7 @@ void XtcReaderActivity::renderPage() {
   const uint16_t pageWidth = xtc->getPageWidth();
   const uint16_t pageHeight = xtc->getPageHeight();
   const uint8_t bitDepth = xtc->getBitDepth();
+  const bool forceGrayscaleBlackWhite = ReaderUtils::shouldForceGrayscaleBlackWhite();
 
   // Calculate buffer size for one page
   // XTG (1-bit): Row-major, ((width+7)/8) * height bytes
@@ -296,7 +297,24 @@ void XtcReaderActivity::renderPage() {
       }
     }
 
-    if (ReaderUtils::isRefreshActionDue(pagesUntilFullRefresh)) {
+    if (forceGrayscaleBlackWhite) {
+      free(pageBuffer);
+      ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+      LOG_DBG("XTR", "Rendered page %lu/%lu (2-bit forced to BW)", currentPage + 1, xtc->getPageCount());
+      return;
+    }
+
+    if (ReaderUtils::isX3NoFlashEnabled()) {
+      switch (static_cast<CrossPointSettings::X3_GRAYSCALE_REFRESH_MODE>(SETTINGS.x3GrayscaleRefreshMode)) {
+        case CrossPointSettings::X3_GRAYSCALE_REFRESH_FAST:
+          renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+          break;
+        case CrossPointSettings::X3_GRAYSCALE_REFRESH_QUICK:
+        case CrossPointSettings::X3_GRAYSCALE_REFRESH_MODE_COUNT:
+          renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
+          break;
+      }
+    } else if (ReaderUtils::isRefreshActionDue(pagesUntilFullRefresh)) {
       // Periodic ghost cleanup: scrub via the normal path, then run the
       // settle flavor of the grayscale base pass (DTM planes are equal after
       // the display sync, so only the gentle reinforcement cells fire).
@@ -309,7 +327,9 @@ void XtcReaderActivity::renderPage() {
       renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
       ReaderUtils::countOrdinaryRefresh(pagesUntilFullRefresh);
     }
-    ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
+    if (!ReaderUtils::isX3NoFlashEnabled()) {
+      ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
+    }
 
     // Pass 2: LSB buffer - mark DARK gray only (XTH value 1)
     // In LUT: 0 bit = apply gray effect, 1 bit = untouched
@@ -351,6 +371,8 @@ void XtcReaderActivity::renderPage() {
 
     // Cleanup grayscale buffers with current frame buffer
     renderer.cleanupGrayscaleWithFrameBuffer();
+
+    ReaderUtils::scheduleNoFlashTransitionAfterGrayscale(pagesUntilFullRefresh);
 
     free(pageBuffer);
 

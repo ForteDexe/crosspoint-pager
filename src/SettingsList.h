@@ -91,8 +91,13 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
 }
 
 inline bool isSettingVisible(const SettingInfo& setting) {
-  if (SETTINGS.refreshAction != CrossPointSettings::REFRESH_ACTION_BW_REINFORCEMENT) {
-    return true;
+  const bool noFlashEnabled = SETTINGS.refreshAction == CrossPointSettings::REFRESH_ACTION_BW_REINFORCEMENT;
+  const bool isNoFlashGrayscaleSetting =
+      setting.valuePtr == &CrossPointSettings::x3GrayscaleRefreshMode ||
+      setting.valuePtr == &CrossPointSettings::x3ForceGrayscaleBlackWhite;
+
+  if (!noFlashEnabled) {
+    return !isNoFlashGrayscaleSetting;
   }
 
   return setting.valuePtr != &CrossPointSettings::refreshFrequency &&
@@ -135,6 +140,11 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Enum(StrId::STR_REFRESH_ACTION, &CrossPointSettings::refreshAction,
                           {StrId::STR_REFRESH_ACTION_FULL, StrId::STR_REFRESH_ACTION_BW_REINFORCEMENT},
                           "refreshAction", StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(StrId::STR_X3_GRAYSCALE_REFRESH, &CrossPointSettings::x3GrayscaleRefreshMode,
+                          {StrId::STR_FAST_REFRESH, StrId::STR_QUICK_REFRESH}, "x3GrayscaleRefreshMode",
+                          StrId::STR_CAT_DISPLAY),
+        SettingInfo::Toggle(StrId::STR_X3_FORCE_GRAYSCALE_BW, &CrossPointSettings::x3ForceGrayscaleBlackWhite,
+                            "x3ForceGrayscaleBlackWhite", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_UI_THEME, &CrossPointSettings::uiTheme,
                           {StrId::STR_THEME_CLASSIC, StrId::STR_THEME_LYRA, StrId::STR_THEME_LYRA_EXTENDED,
                            StrId::STR_THEME_ROUNDEDRAFF},
