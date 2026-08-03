@@ -219,6 +219,7 @@ void waitForPowerRelease() {
 }
 
 constexpr char SLEEP_FRAME_FILE[] = "/.crosspoint/sleep_frame.bin";
+constexpr unsigned long X3_AUTO_QUICK_RESUME_SETTLE_MS = 200;
 
 static void saveSleepFrameBuffer() {
   HalFile file;
@@ -276,6 +277,12 @@ void enterDeepSleep(bool fromTimeout = false, bool pagerLowBatterySleep = false)
   if (isPagerSleep) {
     LOG_INF("MAIN", "Pager standby active; deep sleep skipped for BLE");
     return;
+  }
+
+  if (gpio.deviceIsX3() && fromTimeout && isQuickResumeSleep) {
+    // Automatic sleep has no held-button release interval. Give the panel a
+    // fixed guard after Quick Resume's blocking FAST refresh before shutdown.
+    delay(X3_AUTO_QUICK_RESUME_SETTLE_MS);
   }
 
   if (isQuickResumeSleep) {
