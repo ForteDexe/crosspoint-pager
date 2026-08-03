@@ -219,7 +219,7 @@ void waitForPowerRelease() {
 }
 
 constexpr char SLEEP_FRAME_FILE[] = "/.crosspoint/sleep_frame.bin";
-constexpr unsigned long X3_AUTO_QUICK_RESUME_SETTLE_MS = 200;
+constexpr unsigned long SLEEP_ENTRY_SETTLE_MS = 200;
 
 static void saveSleepFrameBuffer() {
   HalFile file;
@@ -274,15 +274,15 @@ void enterDeepSleep(bool fromTimeout = false, bool pagerLowBatterySleep = false)
   deepSleepInProgress = !isPagerSleep;
   activityManager.goToSleep(fromTimeout, pagerLowBatterySleep);
 
+  if (isPagerSleep || isQuickResumeSleep) {
+    // Give the panel a fixed settling interval after the FAST sleep-screen
+    // paint before standby or the remaining deep-sleep shutdown work.
+    delay(SLEEP_ENTRY_SETTLE_MS);
+  }
+
   if (isPagerSleep) {
     LOG_INF("MAIN", "Pager standby active; deep sleep skipped for BLE");
     return;
-  }
-
-  if (gpio.deviceIsX3() && fromTimeout && isQuickResumeSleep) {
-    // Automatic sleep has no held-button release interval. Give the panel a
-    // fixed guard after Quick Resume's blocking FAST refresh before shutdown.
-    delay(X3_AUTO_QUICK_RESUME_SETTLE_MS);
   }
 
   if (isQuickResumeSleep) {
@@ -389,12 +389,14 @@ void setup() {
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
 
+  const bool isQuickResumeWake = !isSilentReboot && !APP_STATE.showBootScreen;
   const auto wakeupReason = gpio.getWakeupReason();
   switch (wakeupReason) {
     case HalGPIO::WakeupReason::PowerButton:
       LOG_DBG("MAIN", "Verifying power button press duration");
       gpio.verifyPowerButtonWakeup(SETTINGS.getPowerButtonDuration(),
-                                   SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
+                                   !isQuickResumeWake &&
+                                       SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
       break;
     case HalGPIO::WakeupReason::AfterUSBPower:
       // If USB power caused a cold boot, go back to sleep
@@ -434,9 +436,9 @@ void setup() {
   // skips the panel-clearing pass and the X3 initial-full-sync arming (see
   // HalDisplay::begin), so the first paint is FAST_REFRESH (~500ms) over the
   // retained frame and input dispatches against a visible UI.
-  const BootResume resume = isSilentReboot              ? BootResume::Silent
-                            : !APP_STATE.showBootScreen ? BootResume::QuickResume
-                                                        : BootResume::Splash;
+  const BootResume resume = isSilentReboot         ? BootResume::Silent
+                            : isQuickResumeWake    ? BootResume::QuickResume
+                                                   : BootResume::Splash;
 
   setupDisplayAndFonts(resume != BootResume::Splash);
 
