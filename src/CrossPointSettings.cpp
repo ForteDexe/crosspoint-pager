@@ -356,9 +356,8 @@ bool CrossPointSettings::applyRefreshActionConstraints() {
     return false;
   }
 
-  const bool changed = refreshFrequency != REFRESH_1 || textAntiAliasing != 0;
+  const bool changed = refreshFrequency != REFRESH_1;
   refreshFrequency = REFRESH_1;
-  textAntiAliasing = 0;
   return changed;
 }
 

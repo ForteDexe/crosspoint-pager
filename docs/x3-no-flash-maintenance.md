@@ -13,13 +13,15 @@ No-flash maintenance is opt-in. On X3, select
 **Settings > Display > Screen Maintenance > No Flash (X3)**.
 
 Selecting this mode automatically sets **Refresh Frequency** to **1 page** and
-**Text Anti-Aliasing** to **Off**, then hides both settings while the mode is
-active. It also uses two fixed extra same-frame reinforcement passes after each
-eligible page turn. This keeps the tested X3 configuration together as one
-setting.
+hides that setting while the mode is active. It also uses two fixed extra
+same-frame reinforcement passes after each eligible page turn. This keeps the
+tested X3 maintenance cadence together as one setting.
 
-Text anti-aliasing must be off because anti-aliased text contains grayscale
-pixels. While No Flash is selected, two additional controls are visible:
+**Text Anti-Aliasing** remains available. On text-only EPUB and TXT pages, No
+Flash keeps dense font-stroke pixels black and uses gray only for lighter edge
+pixels. This lets the existing black-and-white reinforcement maintain the text
+without forcing a flashing cleanup. While No Flash is selected, two additional
+controls are visible:
 
 - **Gray Page Refresh > Fast Refresh** uses one ordinary fast update when
   leaving grayscale content. It is the fastest option and may leave more gray
@@ -36,7 +38,7 @@ pixels. While No Flash is selected, two additional controls are visible:
 Black/White** defaults to Off. A manual full refresh can still be used whenever
 the remaining ghosting becomes distracting. Switching **Screen Maintenance**
 back to **Full Refresh** hides the two No Flash grayscale controls and makes
-the frequency and anti-aliasing controls visible again.
+the frequency control visible again.
 
 ## Verify it
 
@@ -54,9 +56,9 @@ the frequency and anti-aliasing controls visible again.
 
 The firmware keeps the conservative cleanup path outside X3 No Flash for:
 
-- pages containing images or grayscale, including anti-aliased text;
+- pages containing images or other grayscale content;
 - indexing, bookmark, error, and other popup residue;
-- wake and sleep transitions;
+- wake and sleep transitions that require controller cleanup;
 - manual full refreshes;
 - 2-bit grayscale XTC pages; and
 - non-X3 devices.

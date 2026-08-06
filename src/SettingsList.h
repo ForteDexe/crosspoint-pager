@@ -100,8 +100,7 @@ inline bool isSettingVisible(const SettingInfo& setting) {
     return !isNoFlashGrayscaleSetting;
   }
 
-  return setting.valuePtr != &CrossPointSettings::refreshFrequency &&
-         setting.valuePtr != &CrossPointSettings::textAntiAliasing;
+  return setting.valuePtr != &CrossPointSettings::refreshFrequency;
 }
 
 // Shared settings list used by both the device settings UI and the web settings API.

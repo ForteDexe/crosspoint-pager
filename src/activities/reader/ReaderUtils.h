@@ -174,11 +174,14 @@ inline void restoreRefreshCycleAfterQuickResume(int& pagesUntilFullRefresh) {
 // and other overlays should be drawn before calling this.
 // Kept as a template to avoid std::function overhead; instantiated once per reader type.
 template <typename RenderFn>
-void renderAntiAliased(GfxRenderer& renderer, RenderFn&& renderFn) {
+void renderAntiAliased(GfxRenderer& renderer, RenderFn&& renderFn, const bool highContrastText = false) {
   if (!renderer.storeBwBuffer()) {
     LOG_ERR("READER", "Failed to store BW buffer for anti-aliasing");
     return;
   }
+
+  const bool previousHighContrast = renderer.getHighContrastTextAntialiasing();
+  renderer.setHighContrastTextAntialiasing(highContrastText);
 
   renderer.clearScreen(0x00);
   renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
@@ -192,6 +195,7 @@ void renderAntiAliased(GfxRenderer& renderer, RenderFn&& renderFn) {
 
   renderer.displayGrayBuffer();
   renderer.setRenderMode(GfxRenderer::BW);
+  renderer.setHighContrastTextAntialiasing(previousHighContrast);
 
   renderer.restoreBwBuffer();
 }

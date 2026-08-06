@@ -408,10 +408,12 @@ void TxtReaderActivity::renderPage() {
   renderLines();
   renderStatusBar();
 
-  ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, !SETTINGS.textAntiAliasing);
+  const bool needsTextGrayscale = SETTINGS.textAntiAliasing && !ReaderUtils::shouldForceGrayscaleBlackWhite();
+  ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
 
-  if (SETTINGS.textAntiAliasing) {
-    ReaderUtils::renderAntiAliased(renderer, [&renderLines]() { renderLines(); });
+  if (needsTextGrayscale) {
+    const bool highContrastText = ReaderUtils::isX3NoFlashEnabled();
+    ReaderUtils::renderAntiAliased(renderer, [&renderLines]() { renderLines(); }, highContrastText);
   }
   // scope destructor clears font cache via FontCacheManager
 }

@@ -1039,6 +1039,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const bool needsTextGrayscale = SETTINGS.textAntiAliasing && !forceGrayscaleBlackWhite;
   const bool needsImageGrayscale = pageHasImages && !forceGrayscaleBlackWhite;
   const bool needsAnyGrayscale = needsTextGrayscale || needsImageGrayscale;
+  const bool highContrastText = ReaderUtils::isX3NoFlashEnabled() && needsTextGrayscale;
   auto renderGrayscalePass = [&]() {
     if (needsTextGrayscale) {
       page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
@@ -1077,7 +1078,10 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
       ReaderUtils::rememberRefreshCycle(pagesUntilFullRefresh);
     }
   } else {
-    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, !needsAnyGrayscale);
+    // X3 No Flash rebuilds text AA from a reinforced BW base. Images remain on
+    // the separate grayscale path above because their stable gray areas need
+    // the user-selected gray-page transition policy.
+    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
   }
   const auto tDisplay = millis();
 
@@ -1099,6 +1103,8 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     } else {
       // Bands may be streamed in any order: X4 windows each via setRamArea, X3
       // via PTL.
+      const bool previousHighContrast = renderer.getHighContrastTextAntialiasing();
+      renderer.setHighContrastTextAntialiasing(highContrastText);
       renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
       for (int y = 0; y < gh; y += STRIP_ROWS) {
         const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
@@ -1123,6 +1129,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
       const auto tGrayMsb = millis();
 
       renderer.setRenderMode(GfxRenderer::BW);
+      renderer.setHighContrastTextAntialiasing(previousHighContrast);
       renderer.displayGrayBuffer();
       const auto tGrayDisplay = millis();
 
@@ -1153,6 +1160,8 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
       }
       const auto tBwStore = millis();
 
+      const bool previousHighContrast = renderer.getHighContrastTextAntialiasing();
+      renderer.setHighContrastTextAntialiasing(highContrastText);
       renderer.clearScreen(0x00);
       renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
       renderGrayscalePass();
@@ -1170,6 +1179,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
       renderer.displayGrayBuffer();
       const auto tGrayDisplay = millis();
       renderer.setRenderMode(GfxRenderer::BW);
+      renderer.setHighContrastTextAntialiasing(previousHighContrast);
       renderer.restoreBwBuffer();
       const auto tBwRestore = millis();
 
