@@ -219,7 +219,7 @@ void waitForPowerRelease() {
 }
 
 constexpr char SLEEP_FRAME_FILE[] = "/.crosspoint/sleep_frame.bin";
-constexpr unsigned long SLEEP_ENTRY_SETTLE_MS = 200;
+constexpr unsigned long SLEEP_ENTRY_SETTLE_MS = 500;
 
 static void saveSleepFrameBuffer() {
   HalFile file;
