@@ -82,12 +82,12 @@ unless actually performed. Use `pager_power_debug` only when serial diagnostics
 are explicitly required.
 
 The `default` PlatformIO environment remains a reader-only compatibility
-target. Do not develop or flash it in parallel with the Pager product, and do
-not build it for routine Pager work. Build both `default` and `pager_power` only
-when integrating upstream, preparing a release, changing shared C/C++ behavior
-outside `PAGER_POWER_BUILD`, or when the user explicitly asks for reader-only
-compatibility verification. Changes fully isolated by `PAGER_POWER_BUILD`
-require only the `pager_power` build.
+target. Do not develop, flash, or routinely build it in parallel with the Pager
+product. Routine `ble-pager` development—including shared C/C++ changes outside
+`PAGER_POWER_BUILD`, feature-branch integration, and Pager releases—requires
+only the `pager_power` build. Build `default` only when integrating an upstream
+release or when the user explicitly asks for reader-only compatibility
+verification.
 Pager-specific power, sleep, wake, and display-transition workarounds must be
 guarded by `PAGER_POWER_BUILD`, which is defined only by `pager_power` and
 `pager_power_debug`. Do not change the corresponding `default` reader behavior
