@@ -1,5 +1,11 @@
 #pragma once
 
+#include <builtinFonts/lexenddeca_12_bold.h>
+#include <builtinFonts/lexenddeca_12_regular.h>
+#include <builtinFonts/lexenddeca_14_bold.h>
+#include <builtinFonts/lexenddeca_14_regular.h>
+#include <builtinFonts/lexenddeca_18_bold.h>
+#include <builtinFonts/lexenddeca_18_regular.h>
 #include <builtinFonts/notoserif_12_bold.h>
 #include <builtinFonts/notoserif_12_bolditalic.h>
 #include <builtinFonts/notoserif_12_italic.h>
@@ -35,5 +41,3 @@
 #include <builtinFonts/notosans_18_regular.h>
 #include <builtinFonts/ubuntu_10_bold.h>
 #include <builtinFonts/ubuntu_10_regular.h>
-#include <builtinFonts/ubuntu_12_bold.h>
-#include <builtinFonts/ubuntu_12_regular.h>

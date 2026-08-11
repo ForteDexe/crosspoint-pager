@@ -107,9 +107,17 @@ EpdFont ui10RegularFont(&ubuntu_10_regular);
 EpdFont ui10BoldFont(&ubuntu_10_bold);
 EpdFontFamily ui10FontFamily(&ui10RegularFont, &ui10BoldFont);
 
-EpdFont ui12RegularFont(&ubuntu_12_regular);
-EpdFont ui12BoldFont(&ubuntu_12_bold);
+EpdFont ui12RegularFont(&lexenddeca_12_regular);
+EpdFont ui12BoldFont(&lexenddeca_12_bold);
 EpdFontFamily ui12FontFamily(&ui12RegularFont, &ui12BoldFont);
+
+EpdFont ui14RegularFont(&lexenddeca_14_regular);
+EpdFont ui14BoldFont(&lexenddeca_14_bold);
+EpdFontFamily ui14FontFamily(&ui14RegularFont, &ui14BoldFont);
+
+EpdFont ui18RegularFont(&lexenddeca_18_regular);
+EpdFont ui18BoldFont(&lexenddeca_18_bold);
+EpdFontFamily ui18FontFamily(&ui18RegularFont, &ui18BoldFont);
 
 // measurement of power button press duration calibration value
 unsigned long t1 = 0;
@@ -328,6 +336,8 @@ void setupDisplayAndFonts(bool seamless = false) {
 #endif  // OMIT_FONTS
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
+  renderer.insertFont(UI_14_FONT_ID, ui14FontFamily);
+  renderer.insertFont(UI_18_FONT_ID, ui18FontFamily);
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
 
   // Discover and load SD card fonts

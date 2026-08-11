@@ -737,7 +737,7 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
   const int headingX = marginLeft + sidePadding;
   const int headingY = marginTop + metrics.topPadding;
   const int contentRight = pageWidth - marginRight - sidePadding;
-  const int headingHeight = renderer.getLineHeight(NOTOSANS_18_FONT_ID);
+  const int headingHeight = renderer.getLineHeight(UI_18_FONT_ID);
   const int timelineTop = headingY + headingHeight + metrics.verticalSpacing;
   const int timelineBottom = pageHeight - marginBottom - metrics.verticalSpacing;
   const int timelineX = headingX;
@@ -745,7 +745,7 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
   const int contentWidth = contentRight - contentX;
 
   renderer.clearScreen();
-  renderer.drawText(NOTOSANS_18_FONT_ID, headingX, headingY, tr(STR_PAGER), true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_18_FONT_ID, headingX, headingY, tr(STR_PAGER), true, EpdFontFamily::BOLD);
   const int batteryX = contentRight - metrics.batteryWidth;
   const int batteryLabelY = headingY;
   const int batteryY = batteryLabelY + 6;
@@ -801,7 +801,7 @@ void SleepActivity::renderPagerSleepScreen(const HalDisplay::RefreshMode refresh
       }
       case PagerContentType::Message: {
         int textY = timelineTop + metrics.verticalSpacing;
-        textY = drawPagerWrappedText(pagerTitle, NOTOSANS_14_FONT_ID, contentX, textY, contentWidth, 2,
+        textY = drawPagerWrappedText(pagerTitle, UI_14_FONT_ID, contentX, textY, contentWidth, 2,
                                      EpdFontFamily::BOLD) + metrics.verticalSpacing;
         const int footerHeight = *pagerFooter == '\0' ? 0 : renderer.getLineHeight(SMALL_FONT_ID) * 2;
         const int messageLines = std::max(0, (timelineBottom - textY - footerHeight - metrics.verticalSpacing) /
