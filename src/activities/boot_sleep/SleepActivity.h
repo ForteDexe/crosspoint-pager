@@ -21,6 +21,7 @@ class SleepActivity final : public Activity {
   void render(RenderLock&&) override;
   bool preventAutoSleep() override;
   bool shouldEnterDeepSleep() override;
+  bool usesOwnRenderPipeline() const override { return true; }
   bool handlesPowerButtonSleepGesture() const override { return pagerMode; }
 
  private:

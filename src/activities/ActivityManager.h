@@ -5,6 +5,7 @@
 #include <freertos/task.h>
 
 #include <cassert>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -64,6 +65,16 @@ class ActivityManager {
   // Whether to trigger a render after the current loop()
   // This variable must only be set by the main loop, to avoid race conditions
   bool requestedUpdate = false;
+
+  struct SystemUiRefreshState {
+    bool initialized = false;
+    int countdown = 0;
+    int interval = 0;
+    uint8_t action = 0;
+  } systemUiRefreshState;
+
+  bool beginSystemUiPipeline(const Activity& activity);
+  GfxRenderer::SystemUiRefreshMode nextSystemUiRefreshMode();
 
  public:
   explicit ActivityManager(GfxRenderer& renderer, MappedInputManager& mappedInput)

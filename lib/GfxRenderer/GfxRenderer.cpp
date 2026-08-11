@@ -282,18 +282,21 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
           const uint8_t bmpVal = 3 - ((byte >> bit_index) & 0x3);
 
           if (renderMode == GfxRenderer::BW && bmpVal < 3) {
-            // Black (also paints over the grays in BW mode)
+            // Paint all covered pixels in the requested foreground color.
             renderer.drawPixel(screenX, screenY, pixelState);
-          } else if (renderMode == GfxRenderer::GRAYSCALE_MSB &&
-                     (bmpVal == 2 || (bmpVal == 1 && !renderer.getHighContrastTextAntialiasing()))) {
-            // Light gray (also mark the MSB if it's going to be a dark gray too)
-            // Dedicated X3 gray LUTs now provide proper 4-level gray on both devices
-            // We have to flag pixels in reverse for the gray buffers, as 0 leave alone, 1 update
-            renderer.drawPixel(screenX, screenY, false);
-          } else if (renderMode == GfxRenderer::GRAYSCALE_LSB && bmpVal == 1 &&
-                     !renderer.getHighContrastTextAntialiasing()) {
-            // Dark gray
-            renderer.drawPixel(screenX, screenY, false);
+          } else if (renderMode != GfxRenderer::BW) {
+            const uint8_t grayValue = pixelState ? bmpVal : 3 - bmpVal;
+            const bool highContrast = renderer.getHighContrastTextAntialiasing();
+            const bool writeMsb =
+                (!highContrast && (grayValue == 1 || grayValue == 2)) ||
+                (highContrast && ((pixelState && grayValue == 2) || (!pixelState && grayValue == 1)));
+            const bool writeLsb = grayValue == 1 && (!highContrast || !pixelState);
+
+            if ((renderMode == GfxRenderer::GRAYSCALE_MSB && writeMsb) ||
+                (renderMode == GfxRenderer::GRAYSCALE_LSB && writeLsb)) {
+              // Gray planes use 0 as leave-alone and 1 as update.
+              renderer.drawPixel(screenX, screenY, false);
+            }
           }
         }
       }
@@ -415,6 +418,10 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
     return;
   }
   const auto& font = fontIt->second;
+
+  if (renderMode == BW && font.getData(style)->is2Bit) {
+    recordSystemUiText(fontId, x, y, text, black, style, baseDir, false);
+  }
 
   const char* textCursor = renderedText;
   uint32_t cp;
@@ -1352,13 +1359,146 @@ void GfxRenderer::invertScreen() const {
 void GfxRenderer::displayBuffer(const HalDisplay::RefreshMode refreshMode) const {
   auto elapsed = millis() - start_ms;
   LOG_DBG("GFX", "Time = %lu ms from clearScreen to displayBuffer", elapsed);
+  if (systemUiFrameActive_) {
+    presentSystemUiFrame(refreshMode);
+    return;
+  }
   display.displayBuffer(refreshMode, fadingFix);
 }
 
 void GfxRenderer::displayBufferAndPowerOff(const HalDisplay::RefreshMode refreshMode) const {
   auto elapsed = millis() - start_ms;
   LOG_DBG("GFX", "Time = %lu ms from clearScreen to powered-off displayBuffer", elapsed);
+  systemUiRefreshMode_ = SystemUiRefreshMode::Fast;
+  resetSystemUiTextCapture();
   display.displayBuffer(refreshMode, true);
+}
+
+void GfxRenderer::displayReinforcedFast() const {
+  display.displayGrayscaleBase(HalDisplay::FAST_REFRESH, fadingFix);
+  static constexpr uint8_t X3_NO_FLASH_EXTRA_PASSES = 2;
+  for (uint8_t pass = 0; pass < X3_NO_FLASH_EXTRA_PASSES; pass++) {
+    display.displayGrayscaleBase(HalDisplay::FAST_REFRESH, fadingFix);
+  }
+}
+
+void GfxRenderer::beginSystemUiFrame(const bool antialiasing, const bool highContrast,
+                                     const SystemUiRefreshMode refreshMode) {
+  systemUiFrameActive_ = true;
+  systemUiAntialiasing_ = antialiasing;
+  systemUiHighContrast_ = highContrast;
+  systemUiRefreshMode_ = refreshMode;
+  resetSystemUiTextCapture();
+}
+
+void GfxRenderer::endSystemUiFrame() {
+  systemUiFrameActive_ = false;
+  systemUiAntialiasing_ = false;
+  systemUiHighContrast_ = false;
+  systemUiRefreshMode_ = SystemUiRefreshMode::Fast;
+  resetSystemUiTextCapture();
+}
+
+void GfxRenderer::recordSystemUiText(const int fontId, const int x, const int y, const char* text, const bool black,
+                                     const EpdFontFamily::Style style, const BidiUtils::BidiBaseDir baseDir,
+                                     const bool rotated) const {
+  if (!systemUiFrameActive_ || !systemUiAntialiasing_ || systemUiCaptureOverflow_) {
+    return;
+  }
+
+  const size_t textSize = strlen(text) + 1;
+  if (systemUiTextCommandCount_ >= systemUiTextCommands_.size() ||
+      textSize > systemUiTextBuffer_.size() - systemUiTextBufferUsed_) {
+    systemUiCaptureOverflow_ = true;
+    return;
+  }
+
+  const auto textOffset = static_cast<uint16_t>(systemUiTextBufferUsed_);
+  memcpy(systemUiTextBuffer_.data() + systemUiTextBufferUsed_, text, textSize);
+  systemUiTextBufferUsed_ += textSize;
+  systemUiTextCommands_[systemUiTextCommandCount_++] = {fontId,
+                                                        static_cast<int16_t>(x),
+                                                        static_cast<int16_t>(y),
+                                                        textOffset,
+                                                        style,
+                                                        baseDir,
+                                                        black,
+                                                        rotated};
+}
+
+void GfxRenderer::resetSystemUiTextCapture() const {
+  systemUiCaptureOverflow_ = false;
+  systemUiTextCommandCount_ = 0;
+  systemUiTextBufferUsed_ = 0;
+}
+
+void GfxRenderer::renderCapturedSystemUiText() const {
+  if (!supportsStripGrayscale() || systemUiCaptureOverflow_ || systemUiTextCommandCount_ == 0) {
+    if (systemUiCaptureOverflow_) {
+      LOG_ERR("GFX", "System UI AA capture exceeded its fixed buffer; displaying BW frame");
+    }
+    return;
+  }
+
+  assert(static_cast<size_t>(panelWidthBytes) * SYSTEM_UI_GRAYSCALE_STRIP_ROWS <= systemUiGrayscaleStrip_.size());
+  const auto previousRenderMode = renderMode;
+  const bool previousHighContrast = highContrastTextAntialiasing;
+  highContrastTextAntialiasing = systemUiHighContrast_;
+
+  for (const auto grayPass : {GRAYSCALE_LSB, GRAYSCALE_MSB}) {
+    renderMode = grayPass;
+    for (int stripY = 0; stripY < panelHeight; stripY += SYSTEM_UI_GRAYSCALE_STRIP_ROWS) {
+      const int rows = std::min(SYSTEM_UI_GRAYSCALE_STRIP_ROWS, static_cast<int>(panelHeight) - stripY);
+      beginStripTarget(systemUiGrayscaleStrip_.data(), stripY, rows);
+      clearScreen(0x00);
+
+      for (size_t commandIndex = 0; commandIndex < systemUiTextCommandCount_; commandIndex++) {
+        const auto& command = systemUiTextCommands_[commandIndex];
+        const char* capturedText = systemUiTextBuffer_.data() + command.textOffset;
+        if (command.rotated) {
+          drawTextRotated90CW(command.fontId, command.x, command.y, capturedText, command.black, command.style);
+        } else {
+          drawText(command.fontId, command.x, command.y, capturedText, command.black, command.style, command.baseDir);
+        }
+      }
+
+      endStripTarget();
+      writeGrayscalePlaneStrip(grayPass == GRAYSCALE_LSB, systemUiGrayscaleStrip_.data(), stripY, rows);
+    }
+  }
+
+  renderMode = previousRenderMode;
+  highContrastTextAntialiasing = previousHighContrast;
+  displayGrayBuffer();
+  cleanupGrayscaleWithFrameBuffer();
+}
+
+void GfxRenderer::presentSystemUiFrame(const HalDisplay::RefreshMode requestedMode) const {
+  const auto refreshMode = systemUiRefreshMode_;
+  systemUiRefreshMode_ = SystemUiRefreshMode::Fast;
+
+  if (requestedMode != HalDisplay::FAST_REFRESH) {
+    display.displayBuffer(requestedMode, fadingFix);
+    resetSystemUiTextCapture();
+    return;
+  }
+
+  switch (refreshMode) {
+    case SystemUiRefreshMode::Fast:
+      display.displayBuffer(HalDisplay::FAST_REFRESH, fadingFix);
+      break;
+    case SystemUiRefreshMode::Half:
+      display.displayBuffer(HalDisplay::HALF_REFRESH, fadingFix);
+      break;
+    case SystemUiRefreshMode::ReinforcedFast:
+      displayReinforcedFast();
+      break;
+  }
+
+  if (systemUiAntialiasing_) {
+    renderCapturedSystemUiText();
+  }
+  resetSystemUiTextCapture();
 }
 
 std::string GfxRenderer::truncatedText(const int fontId, const char* text, const int maxWidth,
@@ -1710,6 +1850,10 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
   }
 
   const auto& font = fontIt->second;
+
+  if (renderMode == BW && font.getData(style)->is2Bit) {
+    recordSystemUiText(fontId, x, y, text, black, style, BidiUtils::BidiBaseDir::AUTO, true);
+  }
 
   int lastBaseY = y;
   int lastBaseLeft = 0;
