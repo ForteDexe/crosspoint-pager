@@ -58,7 +58,7 @@ for size in ${LEXEND_UI_FONT_SIZES[@]}; do
     fallback_path="../builtinFonts/source/NotoSans/NotoSans-${style}.ttf"
     output_path="../builtinFonts/${font_name}.h"
     python fontconvert.py $font_name $size $font_path $hebrew_path $fallback_path \
-      --additional-intervals 0x05D0,0x05EA --force-autohint > $output_path
+      --additional-intervals 0x05D0,0x05EA --2bit --force-autohint > $output_path
     echo "Generated $output_path"
   done
 done
