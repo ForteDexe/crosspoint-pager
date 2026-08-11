@@ -1,12 +1,10 @@
 #include "ActivityManager.h"
 
 #include <FontCacheManager.h>
-#include <HalGPIO.h>
 #include <HalPowerManager.h>
 
 #include <algorithm>
 
-#include "CrossPointSettings.h"
 #include "OpdsServerStore.h"
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
@@ -44,11 +42,7 @@ void ActivityManager::renderTaskLoop() {
     RenderLock lock;
     if (currentActivity) {
       HalPowerManager::Lock powerLock;  // Ensure we don't go into low-power mode while rendering
-      const bool useSystemUiPipeline = beginSystemUiPipeline(*currentActivity);
       currentActivity->render(std::move(lock));
-      if (useSystemUiPipeline) {
-        renderer.endSystemUiFrame();
-      }
     }
     // Notify any task blocked in requestUpdateAndWait() that the render is done.
     TaskHandle_t waiter = nullptr;
@@ -177,49 +171,6 @@ void ActivityManager::replaceActivity(std::unique_ptr<Activity>&& newActivity) {
 
 void ActivityManager::goToFileTransfer(const bool resumeJoinNetwork) {
   replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput, resumeJoinNetwork));
-}
-
-bool ActivityManager::beginSystemUiPipeline(const Activity& activity) {
-  if (activity.usesOwnRenderPipeline()) {
-    return false;
-  }
-
-  const bool noFlashEnabled =
-      gpio.deviceIsX3() && SETTINGS.refreshAction == CrossPointSettings::REFRESH_ACTION_BW_REINFORCEMENT;
-  const bool forceBlackAndWhite = noFlashEnabled && SETTINGS.x3ForceGrayscaleBlackWhite != 0;
-  renderer.beginSystemUiFrame(SETTINGS.textAntiAliasing != 0 && !forceBlackAndWhite, noFlashEnabled,
-                              nextSystemUiRefreshMode());
-  return true;
-}
-
-GfxRenderer::SystemUiRefreshMode ActivityManager::nextSystemUiRefreshMode() {
-  const int configuredInterval = SETTINGS.getRefreshFrequency();
-  const uint8_t configuredAction = SETTINGS.refreshAction;
-  if (!systemUiRefreshState.initialized || systemUiRefreshState.interval != configuredInterval ||
-      systemUiRefreshState.action != configuredAction) {
-    systemUiRefreshState.initialized = true;
-    systemUiRefreshState.countdown = configuredInterval;
-    systemUiRefreshState.interval = configuredInterval;
-    systemUiRefreshState.action = configuredAction;
-  }
-
-  const bool noFlashEnabled =
-      gpio.deviceIsX3() && configuredAction == CrossPointSettings::REFRESH_ACTION_BW_REINFORCEMENT;
-  if (noFlashEnabled) {
-    return GfxRenderer::SystemUiRefreshMode::ReinforcedFast;
-  }
-
-  if (systemUiRefreshState.countdown == CrossPointSettings::REFRESH_COUNTDOWN_DISABLED) {
-    return GfxRenderer::SystemUiRefreshMode::Fast;
-  }
-
-  if (systemUiRefreshState.countdown <= 1) {
-    systemUiRefreshState.countdown = configuredInterval;
-    return GfxRenderer::SystemUiRefreshMode::Half;
-  }
-
-  systemUiRefreshState.countdown--;
-  return GfxRenderer::SystemUiRefreshMode::Fast;
 }
 
 void ActivityManager::goToSettings() { replaceActivity(std::make_unique<SettingsActivity>(renderer, mappedInput)); }

@@ -14,7 +14,6 @@ enum class BidiBaseDir : signed char { AUTO = -1, LTR = 0, RTL = 1 };
 class FontCacheManager;
 class SdCardFont;
 
-#include <array>
 #include <cstring>
 #include <map>
 #include <string>
@@ -29,7 +28,6 @@ enum Color : uint8_t { Clear = 0x00, White = 0x01, LightGray = 0x05, DarkGray = 
 class GfxRenderer {
  public:
   enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB };
-  enum class SystemUiRefreshMode { Fast, Half, ReinforcedFast };
 
   // Logical screen orientation from the perspective of callers
   enum Orientation {
@@ -41,24 +39,10 @@ class GfxRenderer {
 
  private:
   static constexpr size_t BW_BUFFER_CHUNK_SIZE = 8000;  // 8KB chunks to allow for non-contiguous memory
-  static constexpr size_t SYSTEM_UI_TEXT_COMMAND_COUNT = 192;
-  static constexpr size_t SYSTEM_UI_TEXT_BUFFER_SIZE = 6144;
-  static constexpr int SYSTEM_UI_GRAYSCALE_STRIP_ROWS = 80;
-
-  struct SystemUiTextCommand {
-    int fontId;
-    int16_t x;
-    int16_t y;
-    uint16_t textOffset;
-    EpdFontFamily::Style style;
-    BidiUtils::BidiBaseDir baseDir;
-    bool black;
-    bool rotated;
-  };
 
   HalDisplay& display;
-  mutable RenderMode renderMode;
-  mutable bool highContrastTextAntialiasing = false;
+  RenderMode renderMode;
+  bool highContrastTextAntialiasing = false;
   Orientation orientation;
   bool fadingFix;
   uint8_t* frameBuffer = nullptr;
@@ -91,27 +75,8 @@ class GfxRenderer {
   mutable int _stripRows = 0;
   mutable bool _stripActive = false;
 
-  // System UI text is captured during its normal BW render and replayed into
-  // controller grayscale planes in fixed-size strips. This keeps activities
-  // single-pass and avoids allocating a second full-screen framebuffer.
-  mutable bool systemUiFrameActive_ = false;
-  mutable bool systemUiAntialiasing_ = false;
-  mutable bool systemUiHighContrast_ = false;
-  mutable bool systemUiCaptureOverflow_ = false;
-  mutable SystemUiRefreshMode systemUiRefreshMode_ = SystemUiRefreshMode::Fast;
-  mutable size_t systemUiTextCommandCount_ = 0;
-  mutable size_t systemUiTextBufferUsed_ = 0;
-  mutable std::array<SystemUiTextCommand, SYSTEM_UI_TEXT_COMMAND_COUNT> systemUiTextCommands_{};
-  mutable std::array<char, SYSTEM_UI_TEXT_BUFFER_SIZE> systemUiTextBuffer_{};
-  mutable std::array<uint8_t, BW_BUFFER_CHUNK_SIZE> systemUiGrayscaleStrip_{};
-
   void renderChar(const EpdFontFamily& fontFamily, uint32_t cp, int* x, int* y, bool pixelState,
                   EpdFontFamily::Style style) const;
-  void recordSystemUiText(int fontId, int x, int y, const char* text, bool black, EpdFontFamily::Style style,
-                          BidiUtils::BidiBaseDir baseDir, bool rotated) const;
-  void resetSystemUiTextCapture() const;
-  void renderCapturedSystemUiText() const;
-  void presentSystemUiFrame(HalDisplay::RefreshMode requestedMode) const;
   void freeBwBufferChunks();
   template <Color color>
   void drawPixelDither(int x, int y) const;
@@ -172,9 +137,6 @@ class GfxRenderer {
   int getScreenHeight() const;
   void displayBuffer(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
   void displayBufferAndPowerOff(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
-  void displayReinforcedFast() const;
-  void beginSystemUiFrame(bool antialiasing, bool highContrast, SystemUiRefreshMode refreshMode);
-  void endSystemUiFrame();
   // EXPERIMENTAL: Windowed update - display only a rectangular region
   // void displayWindow(int x, int y, int width, int height) const;
   void invertScreen() const;
