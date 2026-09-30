@@ -1095,13 +1095,6 @@ void SleepActivity::renderCoverSleepScreen() const {
 void SleepActivity::renderLastScreenSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
   renderer.drawImage(MoonIcon, 0, pageHeight - MOONICON_HEIGHT, MOONICON_WIDTH, MOONICON_HEIGHT);
-#ifdef PAGER_POWER_BUILD
-  if (gpio.deviceIsX3()) {
-    // Resynchronize the retained page before cutting power after either sleep trigger.
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-    return;
-  }
-#endif
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
 
