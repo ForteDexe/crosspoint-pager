@@ -227,7 +227,6 @@ void waitForPowerRelease() {
 }
 
 constexpr char SLEEP_FRAME_FILE[] = "/.crosspoint/sleep_frame.bin";
-constexpr unsigned long SLEEP_ENTRY_SETTLE_MS = 500;
 
 static void saveSleepFrameBuffer() {
   HalFile file;
@@ -282,10 +281,14 @@ void enterDeepSleep(bool fromTimeout = false, bool pagerLowBatterySleep = false)
   deepSleepInProgress = !isPagerSleep;
   activityManager.goToSleep(fromTimeout, pagerLowBatterySleep);
 
+#ifdef PAGER_POWER_BUILD
+  if (!gpio.deviceIsX3() && (isPagerSleep || isQuickResumeSleep)) {
+#else
   if (isPagerSleep || isQuickResumeSleep) {
-    // Give the panel a fixed settling interval after the FAST sleep-screen
-    // paint before standby or the remaining deep-sleep shutdown work.
-    delay(SLEEP_ENTRY_SETTLE_MS);
+#endif
+    // Preserve the existing guard outside the X3 Pager product.
+    static constexpr unsigned long LEGACY_SLEEP_ENTRY_SETTLE_MS = 500;
+    delay(LEGACY_SLEEP_ENTRY_SETTLE_MS);
   }
 
   if (isPagerSleep) {
