@@ -84,6 +84,11 @@ class HalGPIO {
   // Check if USB is connected
   bool isUsbConnected() const;
 
+#ifdef PAGER_POWER_BUILD
+  // Active USB host connection, independent of battery charging current or an open serial monitor.
+  bool isUsbHostConnected() const;
+#endif
+
   // Returns true once per edge (plug or unplug) since the last update()
   bool wasUsbStateChanged() const;
 

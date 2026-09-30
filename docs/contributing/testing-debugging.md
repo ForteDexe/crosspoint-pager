@@ -26,6 +26,13 @@ pio run --target upload
 Use the repository-local PlatformIO environment. Do not start a second build
 while another `pio` or project-local Python process is still running.
 
+In Pager firmware, an awake X3 stays awake at normal CPU speed while connected
+to an active USB host, without requiring a serial monitor. Unplugging starts a
+fresh automatic-sleep timeout. Manual power-button sleep still works. A wall
+charger, charge-only cable, or suspended PC USB connection does not inhibit
+automatic sleep. Plugging USB into a sleeping X3 does not change its existing
+boot/sleep behavior.
+
 ```powershell
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'

@@ -5,8 +5,16 @@
 #include <Wire.h>
 #include <esp_sleep.h>
 
+#ifdef PAGER_POWER_BUILD
+#include <driver/usb_serial_jtag.h>
+#endif
+
 // Global HalGPIO instance
 HalGPIO gpio;
+
+#ifdef PAGER_POWER_BUILD
+bool HalGPIO::isUsbHostConnected() const { return usb_serial_jtag_is_connected(); }
+#endif
 
 namespace X3GPIO {
 

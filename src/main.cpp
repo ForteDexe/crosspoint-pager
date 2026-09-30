@@ -584,6 +584,14 @@ void loop() {
 
   // Check for any user activity (button press or release) or active background work
   static unsigned long lastActivityTime = millis();
+#ifdef PAGER_POWER_BUILD
+  // Keep an awake X3 accessible to the PC, including when its battery is full.
+  // Refresh the timer so unplugging starts a full idle timeout; manual sleep still works.
+  if (gpio.deviceIsX3() && gpio.isUsbHostConnected()) {
+    lastActivityTime = millis();
+    powerManager.setPowerSaving(false);
+  }
+#endif
   if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || halTiltSensor.hadActivity() ||
       activityManager.preventAutoSleep()) {
     lastActivityTime = millis();         // Reset inactivity timer
