@@ -1,5 +1,6 @@
 #include <HalDisplay.h>
 #include <HalGPIO.h>
+#include <Logging.h>
 
 // Global HalDisplay instance
 HalDisplay display;
@@ -74,6 +75,24 @@ void HalDisplay::refreshDisplay(HalDisplay::RefreshMode mode, bool turnOffScreen
 }
 
 void HalDisplay::deepSleep() { einkDisplay.deepSleep(); }
+
+#ifdef PAGER_POWER_BUILD
+void HalDisplay::runX3SleepWakeExperiment() {
+  if (!gpio.deviceIsX3()) return;
+  static constexpr uint8_t CYCLES = 3;
+  static constexpr uint8_t PASSES_PER_WAKE = 3;
+  for (uint8_t cycle = 0; cycle < CYCLES; ++cycle) {
+    LOG_DBG("SLP", "Panel sleep/wake experiment cycle %u/%u", cycle + 1, CYCLES);
+    einkDisplay.deepSleep();
+    einkDisplay.wakeX3WithRetainedFrame();
+    for (uint8_t pass = 0; pass < PASSES_PER_WAKE; ++pass) {
+      // Keep panel power on between passes, independent of Sunlight Fading Fix.
+      einkDisplay.displayGrayscaleBase(EInkDisplay::FAST_REFRESH, false);
+    }
+  }
+  // The caller performs the final panel shutdown and battery power cut.
+}
+#endif
 
 uint8_t* HalDisplay::getFrameBuffer() const { return einkDisplay.getFrameBuffer(); }
 

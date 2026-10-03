@@ -308,6 +308,11 @@ void enterDeepSleep(bool fromTimeout = false, bool pagerLowBatterySleep = false)
   }
 
   halTiltSensor.deepSleep();
+#ifdef PAGER_POWER_BUILD
+  if (isQuickResumeSleep && !pagerLowBatterySleep) {
+    display.runX3SleepWakeExperiment();
+  }
+#endif
   display.deepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 

@@ -44,6 +44,11 @@ class HalDisplay {
   // Power management
   void deepSleep();
 
+#ifdef PAGER_POWER_BUILD
+  // Diagnostic: three panel sleep/wake cycles, three settling passes per wake.
+  void runX3SleepWakeExperiment();
+#endif
+
   // Access to frame buffer
   uint8_t* getFrameBuffer() const;
 
